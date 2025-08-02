@@ -20,7 +20,7 @@ class TraceParser:
         with open(mapping_file, 'r') as f:
             return json.load(f)
     
-    def parse_nodes(self, node_file: str = "openb_node_list_gpu_node.csv") -> Dict[str, Node]:
+    def parse_nodes(self, node_file: str = "openb_node_list_all_node.csv") -> Dict[str, Node]:
         """Parse node data from CSV file and create Node entities"""
         nodes = {}
         node_path = self.csv_dir / node_file
@@ -53,7 +53,7 @@ class TraceParser:
                     cpu_milli_total=cpu_total,
                     memory_mib_left=memory_total,
                     memory_mib_total=memory_total,
-                    gpu_count=gpu_count,
+                    gpu_left=gpu_count,
                     gpus=gpus,
                 )
                 nodes[node_id] = node
@@ -94,7 +94,7 @@ class TraceParser:
                     creation_time=creation_time,
                     duration_time=deletion_time - creation_time,
                     assigned_node="",
-                    assigned_gpu=-1
+                    assigned_gpus=[]
                 )
                 pods.append(pod)
         
@@ -114,7 +114,7 @@ class TraceParser:
             pod_files.append(file.name)
         return sorted(pod_files)
     
-    def parse_workload(self, node_file: str = "openb_node_list_gpu_node.csv", 
+    def parse_workload(self, node_file: str = "openb_node_list_all_node.csv", 
                       pod_file: str = "openb_pod_list_default.csv") -> tuple[Cluster, List[Pod]]:
         """Parse both cluster and pods from trace files"""
         cluster = self.parse_cluster(node_file)
@@ -141,7 +141,7 @@ def main():
         print(f"\nSample node: {sample_node.node_id}")
         print(f"  CPU: {sample_node.cpu_milli_total} milli")
         print(f"  Memory: {sample_node.memory_mib_total} MiB")
-        print(f"  GPUs: {sample_node.gpu_count}")
+        print(f"  GPUs: {sample_node.gpu_left}")
         if sample_node.gpus:
             print(f"  GPU Memory: {sample_node.gpus[0].memory_mib_total} MiB each")
     

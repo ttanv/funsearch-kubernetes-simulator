@@ -17,7 +17,7 @@ class Node:
     cpu_milli_total: int
     memory_mib_left: int
     memory_mib_total: int
-    gpu_count: int
+    gpu_left: int
     gpus: list[GPU]
     
 @dataclass
@@ -37,6 +37,8 @@ class Pod:
     gpu_spec: str
     creation_time: int
     duration_time: int
+    
+    # Used by simulator to track when freeing up
     assigned_node: str
-    assigned_gpu: int
+    assigned_gpus: list[int]
     
