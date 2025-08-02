@@ -90,7 +90,7 @@ class TraceParser:
                     gpu_milli=gpu_milli,
                     gpu_spec=gpu_spec,
                     creation_time=creation_time,
-                    deletion_time=deletion_time
+                    duration_time=deletion_time - creation_time 
                 )
                 pods.append(pod)
         

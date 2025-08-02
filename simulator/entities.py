@@ -34,5 +34,5 @@ class Pod:
     gpu_milli: int
     gpu_spec: str
     creation_time: int
-    deletion_time: int
+    duration_time: int
     
