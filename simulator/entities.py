@@ -6,6 +6,8 @@ class GPU:
     """Represents single GPU inside a node"""
     memory_mib_left: int
     memory_mib_total: int
+    gpu_milli_left: int
+    gpu_milli_total: int
     
 @dataclass
 class Node:
@@ -35,4 +37,6 @@ class Pod:
     gpu_spec: str
     creation_time: int
     duration_time: int
+    assigned_node: str
+    assigned_gpu: int
     

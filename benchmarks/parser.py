@@ -41,7 +41,9 @@ class TraceParser:
                     for _ in range(gpu_count):
                         gpu = GPU(
                             memory_mib_left=gpu_memory,
-                            memory_mib_total=gpu_memory
+                            memory_mib_total=gpu_memory,
+                            gpu_milli_left=1000,
+                            gpu_milli_total=1000
                         )
                         gpus.append(gpu)
                 
@@ -52,7 +54,7 @@ class TraceParser:
                     memory_mib_left=memory_total,
                     memory_mib_total=memory_total,
                     gpu_count=gpu_count,
-                    gpus=gpus
+                    gpus=gpus,
                 )
                 nodes[node_id] = node
         
@@ -90,7 +92,9 @@ class TraceParser:
                     gpu_milli=gpu_milli,
                     gpu_spec=gpu_spec,
                     creation_time=creation_time,
-                    duration_time=deletion_time - creation_time 
+                    duration_time=deletion_time - creation_time,
+                    assigned_node="",
+                    assigned_gpu=-1
                 )
                 pods.append(pod)
         
