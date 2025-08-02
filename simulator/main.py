@@ -6,7 +6,24 @@ from simulator.event_simulator import DiscreteEventSimulator, Event, EventType
 # Type alias for a function that takes a Pod and a Node and returns an int
 PodNodeScorer = Callable[[Pod, Node], int]
 
-class KubernetesSimulatr:
+def print_cluster_state(cluster: Cluster, step: str):
+    """Print current cluster resource usage"""
+    print(f"\n--- Cluster State: {step} ---")
+    for node_id, node in cluster.nodes_dict.items():
+        cpu_used = node.cpu_milli_total - node.cpu_milli_left
+        memory_used = node.memory_mib_total - node.memory_mib_left
+        gpu_used = len(node.gpus) - node.gpu_left
+        
+        print(f"{node_id}:")
+        print(f"  CPU: {cpu_used}/{node.cpu_milli_total} milli")
+        print(f"  Memory: {memory_used}/{node.memory_mib_total} MiB")
+        print(f"  GPUs: {gpu_used}/{len(node.gpus)}")
+        
+        for i, gpu in enumerate(node.gpus):
+            gpu_mem_used = gpu.gpu_milli_total - gpu.gpu_milli_left
+            print(f"    GPU{i}: {gpu_mem_used}/{gpu.gpu_milli_total} milli")
+
+class KubernetesSimulator:
     def __init__(self, 
                  cluster: Cluster, 
                  pod_list: list[Pod],
@@ -23,7 +40,7 @@ class KubernetesSimulatr:
         """
         while not self.event_simulator.finished_events():
             # Get the next event
-            event: Event = self.event_simulator.pop_event()
+            time, event = self.event_simulator.pop_event()
             
             if event.event_type == EventType.DELETION:
                 self._handle_deletion(event)
@@ -64,8 +81,10 @@ class KubernetesSimulatr:
                 best_score = curr_score
                 best_node = node
         
+        # If not suitable such node, reschedule until after next deletion
         if best_node is None:
-            raise ValueError("Best score returned by scheduler < 0, revisit scheduler")
+            self.event_simulator.repush_creation_event(pod)
+            return
         
         # Update the node
         best_node.cpu_milli_left -= pod.cpu_milli
@@ -84,6 +103,8 @@ class KubernetesSimulatr:
         
         # Create deletion event
         self.event_simulator.push_deletion_event(pod)
+        
+        # print_cluster_state(self.cluster, "During Run")
     
     def _allocate_gpus_best_fit(self, node: Node, pod: Pod) -> list[int]:
         """
