@@ -33,10 +33,13 @@ class DiscreteEventSimulator:
     def pop_event(self):
         return heapq.heappop(self.event_heap)
 
-    def peek_event(self):
+    def peak_event(self):
         return self.event_heap[0]
+    
+    def finished_events(self):
+        return len(self.event_heap) == 0
 
     def push_deletion_event(self, pod):
         del_event = Event(EventType.DELETION, pod)
-        # Assumes pod.deletion_time has been set by a scheduler.
+        # Assumes pod.deletion_time has been set by the scheduler.
         heapq.heappush(self.event_heap, (pod.deletion_time, del_event))
