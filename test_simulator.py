@@ -27,7 +27,7 @@ def best_fit_scheduler(pod: Pod, node: Node) -> int:
     remaining_memory = node.memory_mib_left - pod.memory_mib
     remaining_gpus = node.gpu_left - pod.num_gpu
     
-    # Return inverse of remaining resources (higher score = better fit)
+    # Return inverse of remaining resources (higher score => better fit)
     score = 1000000 // (remaining_cpu + remaining_memory + remaining_gpus + 1)
     return score
 

@@ -6,6 +6,33 @@ from simulator.event_simulator import DiscreteEventSimulator, Event, EventType
 # Type alias for a function that takes a Pod and a Node and returns an int
 PodNodeScorer = Callable[[Pod, Node], int]
 
+def validate_cluster_invariants(cluster: Cluster):
+    """Validate cluster state invariants to ensure correctness"""
+    for node_id, node in cluster.nodes_dict.items():
+        # Check node resource invariants
+        if node.cpu_milli_left < 0:
+            raise ValueError(f"Node {node_id} has negative CPU remaining: {node.cpu_milli_left}")
+        if node.memory_mib_left < 0:
+            raise ValueError(f"Node {node_id} has negative memory remaining: {node.memory_mib_left}")
+        if node.gpu_left < 0:
+            raise ValueError(f"Node {node_id} has negative GPU count remaining: {node.gpu_left}")
+        
+        # Check that remaining resources don't exceed total
+        if node.cpu_milli_left > node.cpu_milli_total:
+            raise ValueError(f"Node {node_id} CPU remaining exceeds total: {node.cpu_milli_left} > {node.cpu_milli_total}")
+        if node.memory_mib_left > node.memory_mib_total:
+            raise ValueError(f"Node {node_id} memory remaining exceeds total: {node.memory_mib_left} > {node.memory_mib_total}")
+        if node.gpu_left > len(node.gpus):
+            raise ValueError(f"Node {node_id} GPU remaining exceeds total: {node.gpu_left} > {len(node.gpus)}")
+        
+        # Check GPU invariants
+        for i, gpu in enumerate(node.gpus):
+            if gpu.gpu_milli_left < 0:
+                raise ValueError(f"Node {node_id} GPU {i} has negative memory remaining: {gpu.gpu_milli_left}")
+            if gpu.gpu_milli_left > gpu.gpu_milli_total:
+                raise ValueError(f"Node {node_id} GPU {i} memory remaining exceeds total: {gpu.gpu_milli_left} > {gpu.gpu_milli_total}")
+
+
 def print_cluster_state(cluster: Cluster, step: str):
     """Print current cluster resource usage"""
     print(f"\n--- Cluster State: {step} ---")
@@ -63,11 +90,14 @@ class KubernetesSimulator:
         # Free up gpu resources if valid
         gpu_ids = pod.assigned_gpus
         if len(gpu_ids) == 0:
+            validate_cluster_invariants(self.cluster)
             return
         
         for gpu_id in gpu_ids:
             gpu: GPU = node.gpus[gpu_id]
-            gpu.gpu_milli_left += pod.gpu_milli 
+            gpu.gpu_milli_left += pod.gpu_milli
+        
+        validate_cluster_invariants(self.cluster) 
             
     def _handle_creation(self, event: Event):
         pod: Pod = event.pod
@@ -103,6 +133,8 @@ class KubernetesSimulator:
         
         # Create deletion event
         self.event_simulator.push_deletion_event(pod)
+        
+        validate_cluster_invariants(self.cluster)
         
         # print_cluster_state(self.cluster, "During Run")
     
