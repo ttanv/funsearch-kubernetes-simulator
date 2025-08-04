@@ -102,10 +102,6 @@ def test_simulator():
     cluster = create_test_cluster()
     pods = create_test_pods()
     
-    # Set deletion times
-    for pod in pods:
-        pod.deletion_time = pod.creation_time + pod.duration_time
-    
     print_cluster_state(cluster, "Initial")
     
     event_simulator = DiscreteEventSimulator(pods)
