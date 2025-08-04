@@ -95,7 +95,7 @@ def print_simulation_results(simulator: KubernetesSimulator, cluster: Cluster, p
     utilized_nodes = len(nodes_with_scheduled_pods)
     
     print(f"Total nodes: {total_nodes}")
-    print(f"Nodes with scheduled pods: {len(simulator.node_set)}")
+    print(f"Nodes with scheduled pods: {utilized_nodes}")
     print(f"Node utilization rate: {utilized_nodes/total_nodes*100:.1f}%")
     
     # Workload breakdown
@@ -124,7 +124,7 @@ def test_integration_full_dataset():
     
     # Run simulation
     event_simulator = DiscreteEventSimulator(pods)
-    simulator = KubernetesSimulator(cluster, pods, event_simulator, best_fit_scheduler, False)
+    simulator = KubernetesSimulator(cluster, pods, event_simulator, first_fit_scheduler, False)
     
     start_time = time.time()
     try:
