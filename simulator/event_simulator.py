@@ -42,15 +42,17 @@ class DiscreteEventSimulator:
     def finished_events(self):
         return len(self.event_heap) == 0
 
-    def push_deletion_event(self, pod):
+    def push_deletion_event(self, pod: Pod):
         del_event = Event(EventType.DELETION, pod)
+        deletion_time = pod.creation_time + pod.duration_time
         # Assumes pod.deletion_time has been set by the scheduler.
-        heapq.heappush(self.event_heap, (pod.deletion_time, del_event))
+        heapq.heappush(self.event_heap, (deletion_time, del_event))
         
-    def repush_creation_event(self, pod):
+    def repush_creation_event(self, pod: Pod):
         # In case no resources free
         for (time, event) in self.event_heap:
                 if event.event_type == EventType.DELETION:
                     new_time = time + 1
+                    pod.creation_time = new_time
                     new_event = (new_time, Event(EventType.CREATION, pod))
                     heapq.heappush(self.event_heap, new_event)
