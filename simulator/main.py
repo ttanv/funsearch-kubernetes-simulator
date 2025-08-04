@@ -6,32 +6,6 @@ from simulator.event_simulator import DiscreteEventSimulator, Event, EventType
 # Type alias for a function that takes a Pod and a Node and returns an int
 PodNodeScorer = Callable[[Pod, Node], int]
 
-def validate_cluster_invariants(cluster: Cluster):
-    """Validate cluster state invariants to ensure correctness"""
-    for node_id, node in cluster.nodes_dict.items():
-        # Check node resource invariants
-        if node.cpu_milli_left < 0:
-            raise ValueError(f"Node {node_id} has negative CPU remaining: {node.cpu_milli_left}")
-        if node.memory_mib_left < 0:
-            raise ValueError(f"Node {node_id} has negative memory remaining: {node.memory_mib_left}")
-        if node.gpu_left < 0:
-            raise ValueError(f"Node {node_id} has negative GPU count remaining: {node.gpu_left}")
-        
-        # Check that remaining resources don't exceed total
-        if node.cpu_milli_left > node.cpu_milli_total:
-            raise ValueError(f"Node {node_id} CPU remaining exceeds total: {node.cpu_milli_left} > {node.cpu_milli_total}")
-        if node.memory_mib_left > node.memory_mib_total:
-            raise ValueError(f"Node {node_id} memory remaining exceeds total: {node.memory_mib_left} > {node.memory_mib_total}")
-        if node.gpu_left > len(node.gpus):
-            raise ValueError(f"Node {node_id} GPU remaining exceeds total: {node.gpu_left} > {len(node.gpus)}")
-        
-        # Check GPU invariants
-        for i, gpu in enumerate(node.gpus):
-            if gpu.gpu_milli_left < 0:
-                raise ValueError(f"Node {node_id} GPU {i} has negative memory remaining: {gpu.gpu_milli_left}")
-            if gpu.gpu_milli_left > gpu.gpu_milli_total:
-                raise ValueError(f"Node {node_id} GPU {i} memory remaining exceeds total: {gpu.gpu_milli_left} > {gpu.gpu_milli_total}")
-
 
 def print_cluster_state(cluster: Cluster, step: str):
     """Print current cluster resource usage"""
@@ -55,11 +29,13 @@ class KubernetesSimulator:
                  cluster: Cluster, 
                  pod_list: list[Pod],
                  event_simulator: DiscreteEventSimulator,
-                 scheduler: PodNodeScorer):
+                 scheduler: PodNodeScorer,
+                 validate_invariants: bool = True):
         self.cluster = cluster
         self.pod_list = pod_list
         self.event_simulator = event_simulator
         self.scheduler = scheduler
+        self.validate_invariants = validate_invariants
              
     def run_schedule(self):
         """
@@ -90,14 +66,16 @@ class KubernetesSimulator:
         # Free up gpu resources if valid
         gpu_ids = pod.assigned_gpus
         if len(gpu_ids) == 0:
-            validate_cluster_invariants(self.cluster)
+            if self.validate_invariants:
+                self._validate_cluster_invariants()
             return
         
         for gpu_id in gpu_ids:
             gpu: GPU = node.gpus[gpu_id]
             gpu.gpu_milli_left += pod.gpu_milli
         
-        validate_cluster_invariants(self.cluster) 
+        if self.validate_invariants:
+            self._validate_cluster_invariants() 
             
     def _handle_creation(self, event: Event):
         pod: Pod = event.pod
@@ -134,9 +112,12 @@ class KubernetesSimulator:
         # Create deletion event
         self.event_simulator.push_deletion_event(pod)
         
-        validate_cluster_invariants(self.cluster)
+        # # TODO: remove after debudding
+        # if best_node.node_id == "openb-node-0127":
+        #     print(best_node)
         
-        # print_cluster_state(self.cluster, "During Run")
+        if self.validate_invariants:
+            self._validate_cluster_invariants()
     
     def _allocate_gpus_best_fit(self, node: Node, pod: Pod) -> list[int]:
         """
@@ -188,3 +169,76 @@ class KubernetesSimulator:
             raise ValueError(f"Not enough GPUs available on node {node.node_id}")
         
         return allocated_indices
+    
+    def _validate_cluster_invariants(self):
+        """Validate cluster state invariants to ensure correctness for debudding purposes"""
+        for node_id, node in self.cluster.nodes_dict.items():
+            # Check node resource invariants
+            if node.cpu_milli_left < 0:
+                raise ValueError(f"Node {node_id} has negative CPU remaining: {node.cpu_milli_left}")
+            if node.memory_mib_left < 0:
+                raise ValueError(f"Node {node_id} has negative memory remaining: {node.memory_mib_left}")
+            if node.gpu_left < 0:
+                raise ValueError(f"Node {node_id} has negative GPU count remaining: {node.gpu_left}")
+            
+            # Check that remaining resources don't exceed total
+            if node.cpu_milli_left > node.cpu_milli_total:
+                raise ValueError(f"Node {node_id} CPU remaining exceeds total: {node.cpu_milli_left} > {node.cpu_milli_total}")
+            if node.memory_mib_left > node.memory_mib_total:
+                raise ValueError(f"Node {node_id} memory remaining exceeds total: {node.memory_mib_left} > {node.memory_mib_total}")
+            if node.gpu_left > len(node.gpus):
+                raise ValueError(f"Node {node_id} GPU remaining exceeds total: {node.gpu_left} > {len(node.gpus)}")
+            
+            # Check GPU invariants
+            for i, gpu in enumerate(node.gpus):
+                if gpu.gpu_milli_left < 0:
+                    raise ValueError(f"Node {node_id} GPU {i} has negative milli remaining: {gpu.gpu_milli_left}")
+                if gpu.gpu_milli_left > gpu.gpu_milli_total:
+                    raise ValueError(f"Node {node_id} GPU {i} milli remaining exceeds total: {gpu.gpu_milli_left} > {gpu.gpu_milli_total}")
+        
+        # Check pods assigned to nodes have valid node assignments
+        for pod in self.pod_list:
+            if pod.assigned_node != "" and pod.assigned_node not in self.cluster.nodes_dict:
+                raise ValueError(f"Pod {pod.pod_id} assigned to non-existent node: {pod.assigned_node}")
+        
+        # Consider only valid pods
+        valid_pods = []
+        for _, event in self.event_simulator.event_heap:
+            if event.pod.assigned_node != "":
+                valid_pods.append(event.pod)     
+                
+        # Validate resource accounting: used + remaining = total for each node
+        for node_id, node in self.cluster.nodes_dict.items():
+            # Find all pods assigned to this node
+            assigned_pods = [pod for pod in valid_pods if pod.assigned_node == node_id]
+            
+            # Calculate total resources used by assigned pods
+            used_cpu = sum(pod.cpu_milli for pod in assigned_pods)
+            used_memory = sum(pod.memory_mib for pod in assigned_pods)
+            used_gpus = sum(pod.num_gpu for pod in assigned_pods)
+            
+            # Check that used + remaining = total
+            if used_cpu + node.cpu_milli_left != node.cpu_milli_total:
+                raise ValueError(f"Node {node_id} CPU accounting error: used({used_cpu}) + "
+                                f"remaining({node.cpu_milli_left}) != total({node.cpu_milli_total})")
+            if used_memory + node.memory_mib_left != node.memory_mib_total:
+                raise ValueError(f"Node {node_id} memory accounting error: used({used_memory}) + "
+                                f"remaining({node.memory_mib_left}) != total({node.memory_mib_total})")
+            if used_gpus + node.gpu_left != len(node.gpus):
+                raise ValueError(f"Node {node_id} GPU accounting error: used({used_gpus}) + "
+                                f"remaining({node.gpu_left}) != total({len(node.gpus)})")
+            
+            # Check GPU milli accounting
+            gpu_milli_used = {}
+            for pod in assigned_pods:
+                if pod.num_gpu > 0:
+                    for gpu_index in pod.assigned_gpus:
+                        if gpu_index not in gpu_milli_used:
+                            gpu_milli_used[gpu_index] = 0
+                        gpu_milli_used[gpu_index] += pod.gpu_milli
+            
+            for i, gpu in enumerate(node.gpus):
+                used_gpu_milli = gpu_milli_used.get(i, 0)
+                if used_gpu_milli + gpu.gpu_milli_left != gpu.gpu_milli_total:
+                    raise ValueError(f"Node {node_id} GPU {i} milli accounting error: used({used_gpu_milli}) + "
+                                    "remaining({gpu.gpu_milli_left}) != total({gpu.gpu_milli_total})")
