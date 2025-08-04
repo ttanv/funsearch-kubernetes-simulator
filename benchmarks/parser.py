@@ -114,7 +114,7 @@ class TraceParser:
             pod_files.append(file.name)
         return sorted(pod_files)
     
-    def parse_workload(self, node_file: str = "openb_node_list_all_node.csv", 
+    def parse_workload(self, node_file: str = "openb_node_list_gpu_node.csv", 
                       pod_file: str = "openb_pod_list_default.csv") -> tuple[Cluster, List[Pod]]:
         """Parse both cluster and pods from trace files"""
         cluster = self.parse_cluster(node_file)
