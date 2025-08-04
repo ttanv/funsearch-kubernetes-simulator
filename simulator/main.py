@@ -112,10 +112,6 @@ class KubernetesSimulator:
         # Create deletion event
         self.event_simulator.push_deletion_event(pod)
         
-        # # TODO: remove after debudding
-        # if best_node.node_id == "openb-node-0127":
-        #     print(best_node)
-        
         if self.validate_invariants:
             self._validate_cluster_invariants()
     
