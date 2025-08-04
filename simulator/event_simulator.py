@@ -56,3 +56,4 @@ class DiscreteEventSimulator:
                     pod.creation_time = new_time
                     new_event = (new_time, Event(EventType.CREATION, pod))
                     heapq.heappush(self.event_heap, new_event)
+                    return
