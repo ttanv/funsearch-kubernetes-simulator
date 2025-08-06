@@ -30,16 +30,10 @@ def best_fit_scheduler(pod: Pod, node: Node) -> int:
     remaining_memory = node.memory_mib_left - pod.memory_mib
     remaining_gpus = node.gpu_left - pod.num_gpu
     
-    # Normalize resources using typical node capacities for proper best fit scoring
-    # Typical node: 64000 CPU milli, 262144 Memory MiB, 2 GPUs
-    max_cpu = 64000.0
-    max_memory = 262144.0
-    max_gpus = 2.0
-    
     # Calculate normalized remaining resources (0-1 scale)
-    norm_cpu = remaining_cpu / max_cpu
-    norm_memory = remaining_memory / max_memory  
-    norm_gpus = remaining_gpus / max_gpus
+    norm_cpu = remaining_cpu / node.cpu_milli_total
+    norm_memory = remaining_memory / node.memory_mib_total
+    norm_gpus = remaining_gpus / len(node.gpus)
     
     # Weighted sum with equal weights (like kubernetes-scheduler-simulator)
     weights = [0.33, 0.33, 0.34]  # cpu, memory, gpu
@@ -49,7 +43,7 @@ def best_fit_scheduler(pod: Pod, node: Node) -> int:
     
     # Return inverse of normalized remaining (higher score => better fit)
     # Scale to reasonable integer range
-    score = int((1.0 - normalized_remaining) * 10000)
+    score = int((1 - normalized_remaining) * 10000)
     return max(1, score)  # Ensure positive score
 
 
@@ -73,7 +67,8 @@ def first_fit_scheduler(pod: Pod, node: Node) -> int:
     return 1000
 
 
-def print_simulation_results(simulator: KubernetesSimulator, cluster: Cluster, pods: List[Pod], simulation_time: float, scheduler_name: str):
+def print_simulation_results(simulator: KubernetesSimulator, cluster: Cluster, pods: List[Pod], 
+                             simulation_time: float, scheduler_name: str):
     """Print simulation results and metrics"""
     print(f"\n=== {scheduler_name} Results ===")
     
@@ -91,8 +86,8 @@ def print_simulation_results(simulator: KubernetesSimulator, cluster: Cluster, p
     
     # Cluster utilization
     total_nodes = len(cluster.nodes_dict)
-    nodes_with_scheduled_pods = set(pod.assigned_node for pod in scheduled_pods)
-    utilized_nodes = len(nodes_with_scheduled_pods)
+    # nodes_with_scheduled_pods = simulator.max_nodes
+    utilized_nodes = simulator.max_nodes
     
     print(f"Total nodes: {total_nodes}")
     print(f"Nodes with scheduled pods: {utilized_nodes}")
@@ -124,7 +119,7 @@ def test_integration_full_dataset():
     
     # Run simulation
     event_simulator = DiscreteEventSimulator(pods)
-    simulator = KubernetesSimulator(cluster, pods, event_simulator, first_fit_scheduler, False)
+    simulator = KubernetesSimulator(cluster, pods, event_simulator, best_fit_scheduler)
     
     start_time = time.time()
     try:
