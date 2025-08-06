@@ -1,7 +1,8 @@
-from typing import Callable
+from typing import Callable, Optional
 
 from simulator.entities import Cluster, Node, GPU, Pod
 from simulator.event_simulator import DiscreteEventSimulator, Event, EventType
+from simulator.evaluator import SchedulingEvaluator
 
 # Type alias for a function that takes a Pod and a Node and returns an int
 PodNodeScorer = Callable[[Pod, Node], int]
@@ -30,12 +31,21 @@ class KubernetesSimulator:
                  pod_list: list[Pod],
                  event_simulator: DiscreteEventSimulator,
                  scheduler: PodNodeScorer,
-                 validate_invariants: bool = True):
+                 validate_invariants: bool = True,
+                 evaluator: Optional[SchedulingEvaluator] = None):
         self.cluster = cluster
         self.pod_list = pod_list
         self.event_simulator = event_simulator
         self.scheduler = scheduler
         self.validate_invariants = validate_invariants
+        self.evaluator = evaluator
+        self.max_nodes = 0
+        self.waiting_pods = []  # Track pods that failed to schedule
+        
+        # Initialize evaluator with total events count
+        if self.evaluator:
+            total_events = len(event_simulator.event_heap)
+            self.evaluator.initialize(total_events)
              
     def run_schedule(self):
         """
@@ -49,6 +59,17 @@ class KubernetesSimulator:
                 self._handle_deletion(event)
             elif event.event_type == EventType.CREATION:
                 self._handle_creation(event)
+                
+            # Record event processed for evaluation
+            if self.evaluator:
+                self.evaluator.record_event_processed(self.cluster)
+                
+            # Update max_nodes with current number of active nodes
+            active_nodes = len([node for node in self.cluster.nodes_dict.values() 
+                              if (node.cpu_milli_left < node.cpu_milli_total or 
+                                  node.memory_mib_left < node.memory_mib_total or 
+                                  node.gpu_left < len(node.gpus))])
+            self.max_nodes = max(self.max_nodes, active_nodes)
             
     def _handle_deletion(self, event: Event):
         pod: Pod = event.pod
@@ -91,6 +112,13 @@ class KubernetesSimulator:
         
         # If not suitable such node, reschedule until after next deletion
         if best_node is None:
+            # Add to waiting pods and record fragmentation event for evaluation
+            if pod not in self.waiting_pods:
+                self.waiting_pods.append(pod)
+            
+            if self.evaluator:
+                self.evaluator.record_fragmentation_event(self.cluster, self.waiting_pods)
+            
             self.event_simulator.repush_creation_event(pod)
             return
         
@@ -108,6 +136,10 @@ class KubernetesSimulator:
         # Update the pod info
         pod.assigned_node = best_node.node_id
         pod.assigned_gpus = allocated_gpu_indices
+        
+        # Remove from waiting pods if it was there
+        if pod in self.waiting_pods:
+            self.waiting_pods.remove(pod)
         
         # Create deletion event
         self.event_simulator.push_deletion_event(pod)
@@ -238,3 +270,9 @@ class KubernetesSimulator:
                 if used_gpu_milli + gpu.gpu_milli_left != gpu.gpu_milli_total:
                     raise ValueError(f"Node {node_id} GPU {i} milli accounting error: used({used_gpu_milli}) + "
                                     "remaining({gpu.gpu_milli_left}) != total({gpu.gpu_milli_total})")
+    
+    def get_evaluation_results(self):
+        """Get evaluation results from the evaluator if enabled"""
+        if self.evaluator:
+            return self.evaluator.get_evaluation_results()
+        return None
