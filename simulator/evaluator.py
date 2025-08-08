@@ -98,6 +98,29 @@ class SchedulingEvaluator:
             num_fragmentation_events=len(self.fragmentation_events)
         )
     
+    def get_policy_score(self) -> float:
+        """Calculate a single representative score (0-1) combining all utilization metrics and GPU fragmentation"""
+        results = self.get_evaluation_results()
+        if not results:
+            return 0.0
+        
+        # Combine all utilization metrics with equal weight
+        overall_utilization = (
+            results.avg_cpu_utilization + 
+            results.avg_memory_utilization + 
+            results.avg_gpu_count_utilization + 
+            results.avg_gpu_memory_utilization
+        ) / 4.0
+        
+        # Apply fragmentation penalty (bounded to maximum of 0.1)
+        fragmentation_penalty = min(0.1, results.gpu_fragmentation_score)
+        
+        # Final score: overall utilization minus fragmentation penalty
+        # Clamp to [0, 1] range
+        score = max(0.0, min(1.0, overall_utilization - fragmentation_penalty))
+        
+        return score
+    
     def _take_utilization_snapshot(self, cluster: Cluster, progress: float) -> UtilizationSnapshot:
         """Take a snapshot of current cluster utilization"""
         used_cpu = sum(node.cpu_milli_total - node.cpu_milli_left for node in cluster.nodes_dict.values())
