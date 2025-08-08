@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 
+import sys
+import os
+
 import time
 from typing import List
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from benchmarks.parser import TraceParser
 from simulator.entities import Cluster, Node, Pod

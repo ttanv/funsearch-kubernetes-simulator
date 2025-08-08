@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 
+import sys
+import os
 import time
 from typing import List, Dict, Callable, Tuple
 from collections import defaultdict
 import statistics
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from benchmarks.parser import TraceParser
 from simulator.entities import Cluster, Node, Pod
@@ -425,6 +430,9 @@ class SchedulerTester:
             # Get evaluation results
             metrics['evaluation_results'] = simulator.get_evaluation_results()
             
+            # Get policy scoer
+            metrics['policy_score'] = simulator.evaluator.get_policy_score()
+            
             # Count scheduled pods
             for pod in pods:
                 if pod.assigned_node != "":
@@ -465,6 +473,7 @@ class SchedulerTester:
             print("-" * 50)
             print(f"  Scheduled Pods:           {metrics['scheduled_pods']:4d}/{len(self.original_pods)} ({success_rate:5.1f}%)")
             print(f"  Simulation Time:          {metrics['simulation_time']:.2f}s")
+            print(f"  Policy Score (0-1):       {metrics['policy_score']:.4f}")
             
             if eval_results:
                 print(f"  Average CPU Utilization:  {eval_results.avg_cpu_utilization:.1%}")

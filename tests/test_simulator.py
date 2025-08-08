@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+import sys
+import os
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from simulator.entities import Cluster, Node, GPU, Pod
 from simulator.event_simulator import DiscreteEventSimulator
 from simulator.main import KubernetesSimulator
