@@ -18,9 +18,8 @@
   },
   "funsearch": {
     "population_size": 20,
-    "generations": 10,
-    "early_stop_threshold": 0.95,
-    "elite_size": 5,
-    "mutation_rate": 0.3
+    "generations": 1,
+    "early_stop_threshold": 0.6,
+    "elite_size": 5
   }
 }

@@ -18,7 +18,7 @@ class SafeExecutor:
     # Probably not an exhaustive list, works for now
     ALLOWED_BUILTINS = {
         'abs', 'min', 'max', 'sum', 'len', 'range', 'enumerate',
-        'int', 'float', 'bool', 'str', 'round'
+        'int', 'float', 'bool', 'str', 'round', 'sorted'
     }
     
     ALLOWED_MODULES = {
@@ -181,6 +181,7 @@ def priority_function(pod, node):
     - pod.cpu_milli, pod.memory_mib, pod.num_gpu, pod.gpu_milli
     - node.cpu_milli_left, node.memory_mib_left, node.gpu_left, node.gpus
     - node.cpu_milli_total, node.memory_mib_total
+    - for each gpu in node.gpus we aslo have gpu.gpu_milli_left, gpu.gpu_milli_total
     """
     
     # Basic feasibility check
@@ -255,11 +256,12 @@ Remember: Each line must start with proper indentation (4 spaces minimum):
 class LLMCodeGenerator:
     """Generate and validate scheduling policies using LLM"""
     
-    def __init__(self, llm_client, safe_executor=None, model=None, max_tokens=400):
+    def __init__(self, llm_client, safe_executor=None, model=None, max_tokens=400, temperature=0.7):
         self.llm_client = llm_client
         self.safe_executor = safe_executor or SafeExecutor()
         self.model = model or "gpt-3.5-turbo"
         self.max_tokens = max_tokens
+        self.temperature = temperature
     
     def generate_policy(self, parent_policies: list = None, 
                        performance_feedback: str = "") -> Optional[str]:
@@ -276,7 +278,7 @@ class LLMCodeGenerator:
             response = self.llm_client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
+                temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
             

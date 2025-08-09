@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Callable
 from collections import defaultdict
+import concurrent.futures
+import threading
 
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -104,7 +106,8 @@ class SimpleFunSearch:
         )
         self.model = openrouter_config["model"]
         max_tokens = openrouter_config.get("max_tokens", 400)
-        self.code_generator = LLMCodeGenerator(self.llm_client, self.safe_executor, self.model, max_tokens)
+        temperature = openrouter_config.get("temperature", 0.7)
+        self.code_generator = LLMCodeGenerator(self.llm_client, self.safe_executor, self.model, max_tokens, temperature)
         
         # Evolution parameters
         funsearch_config = self.config["funsearch"]
@@ -112,6 +115,10 @@ class SimpleFunSearch:
         self.max_generations = funsearch_config["generations"]
         self.early_stop_threshold = funsearch_config["early_stop_threshold"]
         self.elite_size = funsearch_config["elite_size"]
+        
+        # Parallel execution parameters
+        self.max_workers = funsearch_config.get("max_workers", 8)
+        self.print_lock = threading.Lock()
         
         # Load workload data once
         print("Loading OpenB dataset...")
@@ -129,14 +136,14 @@ class SimpleFunSearch:
         """Initialize population with baseline policies"""
         baseline_policies = [
             self._create_first_fit_policy(),
-            # self._create_best_fit_policy(),
+            self._create_best_fit_policy(),
             # self._create_worst_fit_policy(),
             # self._create_gpu_aware_policy(),
             # self._create_utilization_based_policy(),
         ]
         
         # Add some random variations
-        for _ in range(3):
+        for _ in range(0):
             baseline_policies.append(self._create_random_policy())
         
         print("Evaluating baseline policies on OpenB dataset...")
@@ -427,7 +434,7 @@ def priority_function(pod, node):
             feedback = f"Best score so far: {self.best_score:.4f}. "
             feedback += f"Elite policies achieve good performance by balancing resource utilization "
             feedback += f"and considering GPU/CPU workload separation. "
-            feedback += f"Focus on: CPU/memory efficiency, GPU placement strategies, fragmentation reduction."
+            feedback += f"Focus on: CPU/mem/GPU util, efficiency, GPU placement strategies, fragmentation reduction."
             
             # Generate new policy
             new_code = self.code_generator.generate_policy(
@@ -523,6 +530,52 @@ def priority_function(pod, node):
         
         print(f"Best policy saved to {filepath}")
         return filepath
+    
+    def save_top_policies(self, top_k: int = 5, filepath: Optional[str] = None) -> str:
+        """Save the top K evolved policies to a single JSON file as a list"""
+        if not self.population:
+            raise ValueError("No policies to save")
+        
+        # Sort population by score and get top K
+        self.population.sort(key=lambda x: x[1], reverse=True)
+        top_policies = self.population[:min(top_k, len(self.population))]
+        
+        # Generate timestamped filename if not provided
+        if filepath is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            os.makedirs("policies/discovered", exist_ok=True)
+            best_score = top_policies[0][1] if top_policies else 0
+            filepath = f"policies/discovered/funsearch_top{top_k}_{timestamp}_best{best_score:.4f}.json"
+        
+        # Create list of policy data
+        policies_data = []
+        for i, (policy_code, score) in enumerate(top_policies, 1):
+            policy_data = {
+                "rank": i,
+                "score": score,
+                "generation": self.generation,
+                "code": policy_code,
+                "timestamp": datetime.now().isoformat()
+            }
+            policies_data.append(policy_data)
+        
+        # Save all policies in a single file
+        output_data = {
+            "top_k": top_k,
+            "generation": self.generation,
+            "best_score": top_policies[0][1] if top_policies else 0,
+            "timestamp": datetime.now().isoformat(),
+            "policies": policies_data
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        
+        print(f"Top {len(top_policies)} policies saved to {filepath}")
+        for i, (_, score) in enumerate(top_policies, 1):
+            print(f"  Rank {i}: {score:.4f}")
+        
+        return filepath
 
 
 def main():
@@ -532,20 +585,20 @@ def main():
     
     # Run evolution
     try:
-        best_policy, best_score = funsearch.run_evolution(generations=3)  # Start with 3 generations
+        best_policy, best_score = funsearch.run_evolution()  # Start with 3 generations
         
-        # Save the best policy
-        saved_filepath = funsearch.save_best_policy()
+        # Save the top 5 policies
+        saved_filepath = funsearch.save_top_policies(top_k=5)
         
         print(f"\nFinal Results:")
         print(f"Best Score: {best_score:.4f}")
-        print(f"Policy saved to {saved_filepath}")
+        print(f"Top 5 policies saved to: {saved_filepath}")
         
     except KeyboardInterrupt:
         print("\nEvolution interrupted by user")
-        if funsearch.best_policy:
-            interrupted_filepath = funsearch.save_best_policy()
-            print(f"Current best policy saved to {interrupted_filepath}")
+        if funsearch.population:
+            interrupted_filepath = funsearch.save_top_policies(top_k=5)
+            print(f"Current top policies saved to: {interrupted_filepath}")
 
 
 if __name__ == "__main__":
