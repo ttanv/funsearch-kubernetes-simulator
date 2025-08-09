@@ -1,0 +1,26 @@
+{
+  "openrouter": {
+    "api_key": "OPENROUTER_API_KEY",
+    "base_url": "https://openrouter.ai/api/v1",
+    "model": "deepseek/deepseek-chat-v3-0324",
+    "max_tokens": 500,
+    "temperature": 0.7
+  },
+  "safe_execution": {
+    "timeout_seconds": 3,
+    "max_memory_mb": 128,
+    "allowed_imports": [
+      "math",
+      "random",
+      "numpy",
+      "typing"
+    ]
+  },
+  "funsearch": {
+    "population_size": 20,
+    "generations": 10,
+    "early_stop_threshold": 0.95,
+    "elite_size": 5,
+    "mutation_rate": 0.3
+  }
+}
