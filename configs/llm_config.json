@@ -18,8 +18,9 @@
   },
   "funsearch": {
     "population_size": 20,
-    "generations": 1,
+    "generations": 5,
     "early_stop_threshold": 0.6,
-    "elite_size": 5
+    "elite_size": 5,
+    "max_workers": 8
   }
 }

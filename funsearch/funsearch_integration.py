@@ -26,6 +26,43 @@ from simulator.main import KubernetesSimulator
 from simulator.evaluator import SchedulingEvaluator
 
 
+def evaluate_policy_standalone(policy_data: Tuple[int, str]) -> Tuple[int, str, Optional[float]]:
+    """Standalone policy evaluation function for multiprocessing"""
+    policy_index, policy_code = policy_data
+    
+    try:
+        # Re-create components needed for evaluation
+        safe_executor = SafeExecutor(timeout_seconds=3)
+        
+        # Load workload data
+        parser = TraceParser()
+        original_cluster, original_pods = parser.parse_workload()
+        
+        # Create FunSearch scheduler
+        scheduler = FunSearchScheduler(policy_code, safe_executor)
+        
+        # Run full simulation
+        import copy
+        cluster = copy.deepcopy(original_cluster)
+        pods = copy.deepcopy(original_pods)
+        
+        # Initialize simulator with evaluator
+        event_simulator = DiscreteEventSimulator(pods)
+        evaluator = SchedulingEvaluator(cluster, enabled=True)
+        simulator = KubernetesSimulator(cluster, pods, event_simulator, scheduler, evaluator=evaluator)
+        
+        # Run simulation
+        simulator.run_schedule()
+        
+        # Get policy score
+        policy_score = simulator.evaluator.get_policy_score()
+        
+        return (policy_index, policy_code, policy_score)
+        
+    except Exception as e:
+        return (policy_index, policy_code, None)
+
+
 class FunSearchScheduler:
     """FunSearch-evolved scheduler that integrates with the simulator"""
     
@@ -410,8 +447,54 @@ def priority_function(pod, node):
             print(f"Failed to evaluate policy: {e}")
             return None
     
+    def _generate_single_policy(self, policy_index: int, elite_policies: List[Tuple[str, float]], 
+                               feedback: str) -> Tuple[int, Optional[str]]:
+        """Generate a single policy - for parallel execution"""
+        try:
+            # Select parent policies
+            parents = random.sample(elite_policies, min(2, len(elite_policies)))
+            
+            # Generate new policy
+            new_code = self.code_generator.generate_policy(
+                parent_policies=parents,
+                performance_feedback=feedback
+            )
+            
+            with self.print_lock:
+                if new_code:
+                    print(f"Policy {policy_index+1}: Generated successfully")
+                else:
+                    print(f"Policy {policy_index+1}: Generation failed")
+                    
+            return (policy_index, new_code)
+            
+        except Exception as e:
+            with self.print_lock:
+                print(f"Policy {policy_index+1}: Generation error - {e}")
+            return (policy_index, None)
+    
+    def _evaluate_single_policy(self, policy_data: Tuple[int, str]) -> Tuple[int, str, Optional[float]]:
+        """Evaluate a single policy - for parallel execution"""
+        policy_index, policy_code = policy_data
+        
+        try:
+            score = self._evaluate_policy_full(policy_code)
+            
+            with self.print_lock:
+                if score is not None:
+                    print(f"Policy {policy_index+1}: Evaluation complete - Score: {score:.4f}")
+                else:
+                    print(f"Policy {policy_index+1}: Evaluation failed")
+                    
+            return (policy_index, policy_code, score)
+            
+        except Exception as e:
+            with self.print_lock:
+                print(f"Policy {policy_index+1}: Evaluation error - {e}")
+            return (policy_index, policy_code, None)
+    
     def evolve_generation(self):
-        """Evolve one generation using FunSearch"""
+        """Evolve one generation using parallel FunSearch"""
         self.generation += 1
         new_policies = []
         
@@ -424,41 +507,65 @@ def priority_function(pod, node):
         # Generate new policies
         policies_to_generate = min(8, self.population_size - len(elite_policies))
         
-        for i in range(policies_to_generate):
-            print(f"Generating policy {i+1}/{policies_to_generate}...", end=" ")
+        if policies_to_generate == 0:
+            print("No new policies to generate")
+            return
             
-            # Select parent policies
-            parents = random.sample(elite_policies, min(2, len(elite_policies)))
+        # Create performance feedback
+        feedback = f"Best score so far: {self.best_score:.4f}. "
+        feedback += f"Elite policies achieve good performance by balancing resource utilization "
+        feedback += f"and considering GPU/CPU workload separation. "
+        feedback += f"Focus on: CPU/mem/GPU util, efficiency, GPU placement strategies, fragmentation reduction."
+        
+        print(f"Generating {policies_to_generate} policies in parallel...")
+        
+        # Parallel policy generation
+        generated_policies = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all policy generation tasks
+            future_to_index = {
+                executor.submit(self._generate_single_policy, i, elite_policies, feedback): i 
+                for i in range(policies_to_generate)
+            }
             
-            # Create performance feedback
-            feedback = f"Best score so far: {self.best_score:.4f}. "
-            feedback += f"Elite policies achieve good performance by balancing resource utilization "
-            feedback += f"and considering GPU/CPU workload separation. "
-            feedback += f"Focus on: CPU/mem/GPU util, efficiency, GPU placement strategies, fragmentation reduction."
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_index):
+                policy_index, policy_code = future.result()
+                if policy_code:
+                    generated_policies.append((policy_index, policy_code))
+        
+        if not generated_policies:
+            print("No policies generated successfully")
+            return
             
-            # Generate new policy
-            new_code = self.code_generator.generate_policy(
-                parent_policies=parents,
-                performance_feedback=feedback
-            )
+        print(f"Generated {len(generated_policies)} policies successfully")
+        print(f"Evaluating {len(generated_policies)} policies in parallel...")
+        
+        # Parallel policy evaluation
+        with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all evaluation tasks using the standalone function
+            future_to_index = {
+                executor.submit(evaluate_policy_standalone, (policy_index, policy_code)): policy_index
+                for policy_index, policy_code in generated_policies
+            }
             
-            if new_code:
-                # Evaluate new policy
-                score = self._evaluate_policy_full(new_code)
-                if score is not None:
-                    new_policies.append((new_code, score))
-                    
-                    # Update best if improved
-                    if score > self.best_score:
-                        self.best_score = score
-                        self.best_policy = new_code
-                        print(f"NEW BEST! Score: {score:.4f}")
-                    else:
-                        print(f"Score: {score:.4f}")
-                else:
-                    print("Failed")
-            else:
-                print("Generation failed")
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_index):
+                try:
+                    policy_index, policy_code, score = future.result()
+                    if score is not None:
+                        new_policies.append((policy_code, score))
+                        
+                        # Update best if improved
+                        if score > self.best_score:
+                            self.best_score = score
+                            self.best_policy = policy_code
+                            print(f"NEW BEST! Policy {policy_index+1} Score: {score:.4f}")
+                        else:
+                            print(f"Policy {policy_index+1}: Score {score:.4f}")
+                                
+                except Exception as e:
+                    print(f"Error processing evaluation result: {e}")
         
         # Combine elite and new policies
         all_policies = elite_policies + new_policies
@@ -467,8 +574,8 @@ def priority_function(pod, node):
         all_policies.sort(key=lambda x: x[1], reverse=True)
         self.population = all_policies[:self.population_size]
         
-        print(f"Population: {len(self.population)} policies, "
-              f"best score: {self.best_score:.4f}")
+        print(f"Generation complete: {len(new_policies)} new policies evaluated")
+        print(f"Population: {len(self.population)} policies, best score: {self.best_score:.4f}")
     
     def run_evolution(self, generations: Optional[int] = None) -> Tuple[str, float]:
         """Run complete FunSearch evolution"""
