@@ -437,7 +437,7 @@ def priority_function(pod, node):
             simulator.run_schedule()
             
             # Get policy score (0-1 range)
-            policy_score = simulator.evaluator.get_policy_score()
+            policy_score = simulator.evaluator.get_policy_score(pods)
             
             return policy_score
             
@@ -470,26 +470,6 @@ def priority_function(pod, node):
             with self.print_lock:
                 print(f"Policy {policy_index+1}: Generation error - {e}")
             return (policy_index, None)
-    
-    def _evaluate_single_policy(self, policy_data: Tuple[int, str]) -> Tuple[int, str, Optional[float]]:
-        """Evaluate a single policy - for parallel execution"""
-        policy_index, policy_code = policy_data
-        
-        try:
-            score = self._evaluate_policy_full(policy_code)
-            
-            with self.print_lock:
-                if score is not None:
-                    print(f"Policy {policy_index+1}: Evaluation complete - Score: {score:.4f}")
-                else:
-                    print(f"Policy {policy_index+1}: Evaluation failed")
-                    
-            return (policy_index, policy_code, score)
-            
-        except Exception as e:
-            with self.print_lock:
-                print(f"Policy {policy_index+1}: Evaluation error - {e}")
-            return (policy_index, policy_code, None)
     
     def evolve_generation(self):
         """Evolve one generation using parallel FunSearch"""
