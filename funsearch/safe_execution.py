@@ -177,11 +177,28 @@ def priority_function(pod, node):
     Calculate priority score for placing pod on node.
     Higher score = better placement.
     
-    Available attributes:
-    - pod.cpu_milli, pod.memory_mib, pod.num_gpu, pod.gpu_milli
-    - node.cpu_milli_left, node.memory_mib_left, node.gpu_left, node.gpus
-    - node.cpu_milli_total, node.memory_mib_total
-    - for each gpu in node.gpus we aslo have gpu.gpu_milli_left, gpu.gpu_milli_total
+    ## Data Structure Definitions
+
+    # Pod Object
+    # A 'pod' represents a workload request with specific resource requirements.
+    - pod.cpu_milli (int): CPU requested in thousandths of a core.
+    - pod.memory_mib (int): Memory requested in Mebibytes.
+    - pod.num_gpu (int): The number of individual GPUs required.
+    - pod.gpu_milli (int): The compute power required from each GPU.
+
+    # Node Object
+    # A 'node' represents a single machine in the cluster that can host pods.
+    - node.cpu_milli_left (int): Remaining available CPU on the node.
+    - node.memory_mib_left (int): Remaining available memory on the node.
+    - node.gpu_left (int): The count of available (unassigned) GPUs.
+    - node.cpu_milli_total (int): Total CPU capacity of the node.
+    - node.memory_mib_total (int): Total memory capacity of the node.
+    - node.gpus (list[GPU]): A list of 'GPU' objects available on this node.
+
+    # GPU Object
+    # A 'gpu' object represents a single GPU. These are found inside the 'node.gpus' list.
+    - gpu.gpu_milli_left (int): Remaining available compute on this specific GPU.
+    - gpu.gpu_milli_total (int): Total compute capacity of this GPU.
     """
     
     # Basic feasibility check
