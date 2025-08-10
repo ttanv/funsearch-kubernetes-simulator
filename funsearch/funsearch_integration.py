@@ -14,6 +14,7 @@ from typing import List, Tuple, Optional, Dict, Callable
 from collections import defaultdict
 import concurrent.futures
 import threading
+import difflib
 
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -151,6 +152,9 @@ class SimpleFunSearch:
         self.early_stop_threshold = funsearch_config["early_stop_threshold"]
         self.elite_size = funsearch_config["elite_size"]
         
+        # Deduplication parameters
+        self.similarity_threshold = funsearch_config.get("similarity_threshold", 0.85)  # 85% similarity cutoff
+        
         # Parallel execution parameters
         self.max_workers = funsearch_config.get("max_workers", 8)
         self.print_lock = threading.Lock()
@@ -200,6 +204,15 @@ class SimpleFunSearch:
         
         print(f"Initialized population with {len(self.population)} policies")
         print(f"Best baseline score: {self.best_score:.4f}")
+    
+    def _is_too_similar(self, new_code: str, new_score: float) -> bool:
+        """Check if policy is too similar to existing ones with equal/better scores"""
+        for existing_code, existing_score in self.population:
+            if existing_score >= new_score:  # Only check against equal/better policies
+                similarity = difflib.SequenceMatcher(None, new_code.strip(), existing_code.strip()).ratio()
+                if similarity >= self.similarity_threshold:
+                    return True
+        return False
     
     def _create_first_fit_policy(self) -> str:
         """Create first-fit policy"""
@@ -490,8 +503,7 @@ def priority_function(pod, node):
             return
             
         # Create performance feedback
-        feedback = f"Best score so far: {self.best_score:.4f}. "
-        feedback += f"Elite policies achieve good performance by balancing resource utilization "
+        feedback = f"Elite policies achieve good performance by balancing resource utilization "
         feedback += f"and considering GPU/CPU workload separation. "
         feedback += f"Focus on: CPU/mem/GPU util, efficiency, GPU placement strategies, fragmentation reduction."
         
@@ -532,15 +544,19 @@ def priority_function(pod, node):
                 try:
                     policy_index, policy_code, score = future.result()
                     if score is not None:
-                        new_policies.append((policy_code, score))
-                        
-                        # Update best if improved
-                        if score > self.best_score:
-                            self.best_score = score
-                            self.best_policy = policy_code
-                            print(f"NEW BEST! Policy {policy_index+1} Score: {score:.4f}")
+                        # Check similarity before adding to population
+                        if self._is_too_similar(policy_code, score):
+                            print(f"Policy {policy_index+1}: Score {score:.4f} - Too similar, skipped")
                         else:
-                            print(f"Policy {policy_index+1}: Score {score:.4f}")
+                            new_policies.append((policy_code, score))
+                            
+                            # Update best if improved
+                            if score > self.best_score:
+                                self.best_score = score
+                                self.best_policy = policy_code
+                                print(f"NEW BEST! Policy {policy_index+1} Score: {score:.4f}")
+                            else:
+                                print(f"Policy {policy_index+1}: Score {score:.4f}")
                                 
                 except Exception as e:
                     print(f"Error processing evaluation result: {e}")
