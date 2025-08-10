@@ -55,12 +55,12 @@ def evaluate_policy_standalone(policy_data: Tuple[int, str]) -> Tuple[int, str, 
         simulator.run_schedule()
         
         # Get policy score
-        policy_score = simulator.evaluator.get_policy_score()
+        policy_score = simulator.evaluator.get_policy_score(pods)
         
         return (policy_index, policy_code, policy_score)
         
     except Exception as e:
-        return (policy_index, policy_code, None)
+        return (policy_index, policy_code, 0)
 
 
 class FunSearchScheduler:
@@ -95,12 +95,10 @@ class FunSearchScheduler:
             return int(max(0, score))  # Ensure non-negative integer
             
         except Exception as e:
-            # Fallback if evolved policy fails
-            if self.fallback_print:
-                print(f"Evolved policy failed: {e}")
-                self.fallback_print = False
-                
-            return 0
+            # Fallback if evolved policy fails        
+            print(f"Evolved policy failed: {e}")
+            raise e
+    
     
     def _fallback_score(self, pod: Pod, node: Node) -> int:
         """Safe fallback scoring if evolved policy fails"""

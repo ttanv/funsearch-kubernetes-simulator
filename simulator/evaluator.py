@@ -98,11 +98,16 @@ class SchedulingEvaluator:
             num_fragmentation_events=len(self.fragmentation_events)
         )
     
-    def get_policy_score(self) -> float:
+    def get_policy_score(self, pods: list[Pod]) -> float:
         """Calculate a single representative score (0-1) combining all utilization metrics and GPU fragmentation"""
         results = self.get_evaluation_results()
         if not results:
             return 0.0
+        
+        # For assurance, ensure all pods have an assigned pod
+        for pod in pods:
+            if pod.assigned_node == "":
+                return 0
         
         # Combine all utilization metrics with equal weight
         overall_utilization = (

@@ -231,8 +231,158 @@ def best_fit_scheduler(pod: Pod, node: Node) -> int:
     return max(1, score)
 
 
-def first_fit_scheduler(pod: Pod, node: Node) -> int:
-    """First-fit scheduling policy: returns fixed score if pod can fit on node."""
+# def first_fit_scheduler(pod: Pod, node: Node) -> int:
+#     """First-fit scheduling policy: returns fixed score if pod can fit on node."""
+#     if (pod.cpu_milli > node.cpu_milli_left or 
+#         pod.memory_mib > node.memory_mib_left or 
+#         pod.num_gpu > node.gpu_left):
+#         return 0
+    
+#     if pod.num_gpu > 0:
+#         available_gpus = 0
+#         for gpu in node.gpus:
+#             if gpu.gpu_milli_left >= pod.gpu_milli:
+#                 available_gpus += 1
+#         if available_gpus < pod.num_gpu:
+#             return 0
+    
+#     return 1000
+
+
+# def worst_fit_scheduler(pod: Pod, node: Node) -> int:
+#     """Worst-fit: prefers nodes with most remaining resources."""
+#     if (pod.cpu_milli > node.cpu_milli_left or 
+#         pod.memory_mib > node.memory_mib_left or 
+#         pod.num_gpu > node.gpu_left):
+#         return 0
+    
+#     if pod.num_gpu > 0:
+#         available_gpus = 0
+#         for gpu in node.gpus:
+#             if gpu.gpu_milli_left >= pod.gpu_milli:
+#                 available_gpus += 1
+#         if available_gpus < pod.num_gpu:
+#             return 0
+    
+#     remaining_cpu = (node.cpu_milli_left - pod.cpu_milli) / node.cpu_milli_total
+#     remaining_memory = (node.memory_mib_left - pod.memory_mib) / node.memory_mib_total
+#     remaining_gpus = (node.gpu_left - pod.num_gpu) / max(len(node.gpus), 1)
+    
+#     weights = [0.33, 0.33, 0.34]
+#     score = int((remaining_cpu * weights[0] + 
+#                  remaining_memory * weights[1] + 
+#                  remaining_gpus * weights[2]) * 10000)
+#     return max(1, score)
+
+
+# def hybrid_scheduler(pod: Pod, node: Node) -> int:
+#     """Hybrid scheduler: worst-fit for large pods, best-fit for small pods."""
+#     if (pod.cpu_milli > node.cpu_milli_left or 
+#         pod.memory_mib > node.memory_mib_left or 
+#         pod.num_gpu > node.gpu_left):
+#         return 0
+    
+#     if pod.num_gpu > 0:
+#         available_gpus = 0
+#         for gpu in node.gpus:
+#             if gpu.gpu_milli_left >= pod.gpu_milli:
+#                 available_gpus += 1
+#         if available_gpus < pod.num_gpu:
+#             return 0
+    
+#     # Calculate pod size
+#     pod_cpu_ratio = pod.cpu_milli / node.cpu_milli_total
+#     pod_memory_ratio = pod.memory_mib / node.memory_mib_total
+#     pod_gpu_ratio = pod.num_gpu / max(len(node.gpus), 1)
+#     pod_size = max(pod_cpu_ratio, pod_memory_ratio, pod_gpu_ratio)
+    
+#     # Calculate remaining resources
+#     remaining_cpu = (node.cpu_milli_left - pod.cpu_milli) / node.cpu_milli_total
+#     remaining_memory = (node.memory_mib_left - pod.memory_mib) / node.memory_mib_total
+#     remaining_gpus = (node.gpu_left - pod.num_gpu) / max(len(node.gpus), 1)
+    
+#     # Current utilization
+#     current_util = 1 - min(node.cpu_milli_left / node.cpu_milli_total,
+#                            node.memory_mib_left / node.memory_mib_total)
+    
+#     if pod_size > 0.3:  # Large pods - use worst-fit
+#         score = int((remaining_cpu + remaining_memory + remaining_gpus) * 3333)
+#         if current_util < 0.01:  # Bonus for empty nodes
+#             score += 5000
+#     else:  # Small pods - use best-fit for gap filling
+#         if 0.3 < current_util < 0.9:
+#             score = int((1 - (remaining_cpu + remaining_memory + remaining_gpus) / 3) * 10000)
+#             score += 2000
+#         elif current_util >= 0.9:
+#             score = 100 if pod_size >= 0.1 else 8000
+#         else:
+#             score = 100
+    
+#     return max(1, score)
+
+
+# def workload_aware_scheduler(pod: Pod, node: Node) -> int:
+#     """Segregates GPU and CPU workloads for better packing."""
+#     if (pod.cpu_milli > node.cpu_milli_left or 
+#         pod.memory_mib > node.memory_mib_left or 
+#         pod.num_gpu > node.gpu_left):
+#         return 0
+    
+#     if pod.num_gpu > 0:
+#         available_gpus = 0
+#         for gpu in node.gpus:
+#             if gpu.gpu_milli_left >= pod.gpu_milli:
+#                 available_gpus += 1
+#         if available_gpus < pod.num_gpu:
+#             return 0
+    
+#     node_has_gpu = len(node.gpus) > 0
+#     pod_needs_gpu = pod.num_gpu > 0
+    
+#     cpu_util = 1 - (node.cpu_milli_left / node.cpu_milli_total)
+#     mem_util = 1 - (node.memory_mib_left / node.memory_mib_total)
+#     gpu_util = 1 - (node.gpu_left / max(len(node.gpus), 1)) if node_has_gpu else 0
+    
+#     remaining_cpu_norm = (node.cpu_milli_left - pod.cpu_milli) / node.cpu_milli_total
+#     remaining_mem_norm = (node.memory_mib_left - pod.memory_mib) / node.memory_mib_total
+    
+#     base_score = 1000
+    
+#     if pod_needs_gpu:
+#         if not node_has_gpu:
+#             return 0
+#         if gpu_util > 0.1:
+#             base_score += 8000
+#             remaining_gpu_norm = (node.gpu_left - pod.num_gpu) / len(node.gpus)
+#             score = base_score + int((1 - remaining_gpu_norm) * 5000)
+#         else:
+#             score = base_score + 2000
+#         if cpu_util > 0.1 and gpu_util < 0.1:
+#             score = max(1, score - 5000)
+#     else:
+#         if node_has_gpu:
+#             score = 100 if gpu_util > 0.1 else base_score
+#         else:
+#             base_score += 5000
+#             if cpu_util > 0.2:
+#                 score = base_score + int((1 - (remaining_cpu_norm + remaining_mem_norm) / 2) * 4000)
+#             else:
+#                 score = base_score + 2000
+    
+#     cpu_mem_balance = 1 - abs(remaining_cpu_norm - remaining_mem_norm)
+#     score += int(cpu_mem_balance * 1000)
+    
+#     return max(1, score)
+
+def priority_function_rank1(pod, node):
+    """
+    Calculate priority score for placing pod on node.
+    Higher score = better placement.
+    
+    Strategy: Gentle balance penalty with utilization-based GPU selection
+    """
+    
+    # Basic feasibility check
     if (pod.cpu_milli > node.cpu_milli_left or 
         pod.memory_mib > node.memory_mib_left or 
         pod.num_gpu > node.gpu_left):
@@ -246,134 +396,40 @@ def first_fit_scheduler(pod: Pod, node: Node) -> int:
         if available_gpus < pod.num_gpu:
             return 0
     
-    return 1000
-
-
-def worst_fit_scheduler(pod: Pod, node: Node) -> int:
-    """Worst-fit: prefers nodes with most remaining resources."""
-    if (pod.cpu_milli > node.cpu_milli_left or 
-        pod.memory_mib > node.memory_mib_left or 
-        pod.num_gpu > node.gpu_left):
-        return 0
+    # Core scoring logic
+    score = 0.0
     
+    cpu_util = (node.cpu_milli_total - node.cpu_milli_left + pod.cpu_milli) / node.cpu_milli_total
+    mem_util = (node.memory_mib_total - node.memory_mib_left + pod.memory_mib) / node.memory_mib_total
+    balance_score = 1 - abs(cpu_util - mem_util) ** 0.6  # Gentlest penalty
+    
+    efficiency = 0
     if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
-        if available_gpus < pod.num_gpu:
-            return 0
-    
-    remaining_cpu = (node.cpu_milli_left - pod.cpu_milli) / node.cpu_milli_total
-    remaining_memory = (node.memory_mib_left - pod.memory_mib) / node.memory_mib_total
-    remaining_gpus = (node.gpu_left - pod.num_gpu) / max(len(node.gpus), 1)
-    
-    weights = [0.33, 0.33, 0.34]
-    score = int((remaining_cpu * weights[0] + 
-                 remaining_memory * weights[1] + 
-                 remaining_gpus * weights[2]) * 10000)
-    return max(1, score)
-
-
-def hybrid_scheduler(pod: Pod, node: Node) -> int:
-    """Hybrid scheduler: worst-fit for large pods, best-fit for small pods."""
-    if (pod.cpu_milli > node.cpu_milli_left or 
-        pod.memory_mib > node.memory_mib_left or 
-        pod.num_gpu > node.gpu_left):
-        return 0
-    
-    if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
-        if available_gpus < pod.num_gpu:
-            return 0
-    
-    # Calculate pod size
-    pod_cpu_ratio = pod.cpu_milli / node.cpu_milli_total
-    pod_memory_ratio = pod.memory_mib / node.memory_mib_total
-    pod_gpu_ratio = pod.num_gpu / max(len(node.gpus), 1)
-    pod_size = max(pod_cpu_ratio, pod_memory_ratio, pod_gpu_ratio)
-    
-    # Calculate remaining resources
-    remaining_cpu = (node.cpu_milli_left - pod.cpu_milli) / node.cpu_milli_total
-    remaining_memory = (node.memory_mib_left - pod.memory_mib) / node.memory_mib_total
-    remaining_gpus = (node.gpu_left - pod.num_gpu) / max(len(node.gpus), 1)
-    
-    # Current utilization
-    current_util = 1 - min(node.cpu_milli_left / node.cpu_milli_total,
-                           node.memory_mib_left / node.memory_mib_total)
-    
-    if pod_size > 0.3:  # Large pods - use worst-fit
-        score = int((remaining_cpu + remaining_memory + remaining_gpus) * 3333)
-        if current_util < 0.01:  # Bonus for empty nodes
-            score += 5000
-    else:  # Small pods - use best-fit for gap filling
-        if 0.3 < current_util < 0.9:
-            score = int((1 - (remaining_cpu + remaining_memory + remaining_gpus) / 3) * 10000)
-            score += 2000
-        elif current_util >= 0.9:
-            score = 100 if pod_size >= 0.1 else 8000
-        else:
-            score = 100
-    
-    return max(1, score)
-
-
-def workload_aware_scheduler(pod: Pod, node: Node) -> int:
-    """Segregates GPU and CPU workloads for better packing."""
-    if (pod.cpu_milli > node.cpu_milli_left or 
-        pod.memory_mib > node.memory_mib_left or 
-        pod.num_gpu > node.gpu_left):
-        return 0
-    
-    if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
-        if available_gpus < pod.num_gpu:
-            return 0
-    
-    node_has_gpu = len(node.gpus) > 0
-    pod_needs_gpu = pod.num_gpu > 0
-    
-    cpu_util = 1 - (node.cpu_milli_left / node.cpu_milli_total)
-    mem_util = 1 - (node.memory_mib_left / node.memory_mib_total)
-    gpu_util = 1 - (node.gpu_left / max(len(node.gpus), 1)) if node_has_gpu else 0
-    
-    remaining_cpu_norm = (node.cpu_milli_left - pod.cpu_milli) / node.cpu_milli_total
-    remaining_mem_norm = (node.memory_mib_left - pod.memory_mib) / node.memory_mib_total
-    
-    base_score = 1000
-    
-    if pod_needs_gpu:
-        if not node_has_gpu:
-            return 0
-        if gpu_util > 0.1:
-            base_score += 8000
-            remaining_gpu_norm = (node.gpu_left - pod.num_gpu) / len(node.gpus)
-            score = base_score + int((1 - remaining_gpu_norm) * 5000)
-        else:
-            score = base_score + 2000
-        if cpu_util > 0.1 and gpu_util < 0.1:
-            score = max(1, score - 5000)
+        # Sort by utilization ratio (ascending) - fill least utilized first
+        suitable_gpus = sorted([g for g in node.gpus if g.gpu_milli_left >= pod.gpu_milli], 
+                             key=lambda g: g.gpu_milli_left / g.gpu_milli_total)
+        selected_gpus = suitable_gpus[:pod.num_gpu]
+        gpu_util = sum((g.gpu_milli_total - g.gpu_milli_left + pod.gpu_milli) / g.gpu_milli_total 
+                      for g in selected_gpus) / pod.num_gpu
+        frag_score = 1 - (max(g.gpu_milli_left for g in selected_gpus) - 
+                         min(g.gpu_milli_left for g in selected_gpus)) / max(1, sum(g.gpu_milli_total for g in selected_gpus))
+        gpu_score = (1 - gpu_util) * 0.7 + frag_score * 0.3
+        score = (cpu_util * 0.15 + mem_util * 0.15 + gpu_score * 0.6 + balance_score * 0.1) * 120
     else:
-        if node_has_gpu:
-            score = 100 if gpu_util > 0.1 else base_score
-        else:
-            base_score += 5000
-            if cpu_util > 0.2:
-                score = base_score + int((1 - (remaining_cpu_norm + remaining_mem_norm) / 2) * 4000)
-            else:
-                score = base_score + 2000
+        efficiency = (cpu_util + mem_util) / 2
+        frag_penalty = abs(cpu_util - mem_util) * 0.25
+        score = (efficiency * 0.7 + balance_score * 0.3 - frag_penalty) * 100
     
-    cpu_mem_balance = 1 - abs(remaining_cpu_norm - remaining_mem_norm)
-    score += int(cpu_mem_balance * 1000)
+    # Conditional bonuses/penalties
+    if efficiency == 0:
+        return 0
     
-    return max(1, score)
-
+    if balance_score > 0.75 and efficiency > 0.65:
+        score *= 1.2
+    elif max(cpu_util, mem_util) > 0.9:
+        score *= 0.7
+    
+    return max(1, int(score))
 
 # ============= TESTING FRAMEWORK =============
 
@@ -382,14 +438,15 @@ class SchedulerTester:
         self.original_cluster = cluster
         self.original_pods = pods
         self.schedulers = {
-            'first_fit': first_fit_scheduler,
+            # 'first_fit': first_fit_scheduler,
             'best_fit': best_fit_scheduler,
-            'worst_fit': worst_fit_scheduler,
-            'hybrid': hybrid_scheduler,
-            'workload_aware': workload_aware_scheduler,
-            'gpu_first': gpu_first_packing_scheduler,
-            'temporal_aware': temporal_aware_scheduler,
-            'compact_first': compact_first_fit_scheduler,
+            # 'worst_fit': worst_fit_scheduler,
+            # 'hybrid': hybrid_scheduler,
+            # 'workload_aware': workload_aware_scheduler,
+            # 'gpu_first': gpu_first_packing_scheduler,
+            # 'temporal_aware': temporal_aware_scheduler,
+            # 'compact_first': compact_first_fit_scheduler,
+            'pf': priority_function_rank1
         }
         
     def deep_copy_cluster(self, cluster: Cluster) -> Cluster:
@@ -419,6 +476,7 @@ class SchedulerTester:
             'scheduled_pods': 0,
             'simulation_time': 0,
             'evaluation_results': None,
+            'policy_score': 0.0,
         }
         
         # Run simulation
@@ -430,8 +488,8 @@ class SchedulerTester:
             # Get evaluation results
             metrics['evaluation_results'] = simulator.get_evaluation_results()
             
-            # Get policy scoer
-            metrics['policy_score'] = simulator.evaluator.get_policy_score()
+            # Get policy score
+            metrics['policy_score'] = simulator.evaluator.get_policy_score(pods)
             
             # Count scheduled pods
             for pod in pods:
