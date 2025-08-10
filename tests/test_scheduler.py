@@ -231,22 +231,172 @@ def best_fit_scheduler(pod: Pod, node: Node) -> int:
     return max(1, score)
 
 
-# def first_fit_scheduler(pod: Pod, node: Node) -> int:
-#     """First-fit scheduling policy: returns fixed score if pod can fit on node."""
-#     if (pod.cpu_milli > node.cpu_milli_left or 
-#         pod.memory_mib > node.memory_mib_left or 
-#         pod.num_gpu > node.gpu_left):
-#         return 0
+def first_fit_scheduler(pod: Pod, node: Node) -> int:
+    """First-fit scheduling policy: returns fixed score if pod can fit on node."""
+    if (pod.cpu_milli > node.cpu_milli_left or 
+        pod.memory_mib > node.memory_mib_left or 
+        pod.num_gpu > node.gpu_left):
+        return 0
     
-#     if pod.num_gpu > 0:
-#         available_gpus = 0
-#         for gpu in node.gpus:
-#             if gpu.gpu_milli_left >= pod.gpu_milli:
-#                 available_gpus += 1
-#         if available_gpus < pod.num_gpu:
-#             return 0
+    if pod.num_gpu > 0:
+        available_gpus = 0
+        for gpu in node.gpus:
+            if gpu.gpu_milli_left >= pod.gpu_milli:
+                available_gpus += 1
+        if available_gpus < pod.num_gpu:
+            return 0
     
-#     return 1000
+    return 1000
+
+
+def funsearch_4901_scheduler(pod: Pod, node: Node) -> int:
+    """FunSearch discovered policy with score 0.4901 - resource utilization focused."""
+    if (pod.cpu_milli > node.cpu_milli_left or 
+        pod.memory_mib > node.memory_mib_left or 
+        pod.num_gpu > node.gpu_left):
+        return 0
+    
+    if pod.num_gpu > 0:
+        available_gpus = 0
+        for gpu in node.gpus:
+            if gpu.gpu_milli_left >= pod.gpu_milli:
+                available_gpus += 1
+        if available_gpus < pod.num_gpu:
+            return 0
+    
+    score = 0.0
+    
+    # Calculate CPU utilization score
+    cpu_utilization = (node.cpu_milli_total - node.cpu_milli_left) / node.cpu_milli_total
+    if cpu_utilization < 0.7:
+        cpu_score = (1.0 - cpu_utilization) * 100
+    else:
+        cpu_score = (1.0 - cpu_utilization) * 50
+
+    # Calculate memory utilization score
+    memory_utilization = (node.memory_mib_total - node.memory_mib_left) / node.memory_mib_total
+    if memory_utilization < 0.7:
+        memory_score = (1.0 - memory_utilization) * 100
+    else:
+        memory_score = (1.0 - memory_utilization) * 50
+
+    # Calculate GPU utilization score
+    if pod.num_gpu > 0:
+        gpu_utilization = (node.gpu_left * node.gpus[0].gpu_milli_total - sum(gpu.gpu_milli_left for gpu in node.gpus)) / (node.gpu_left * node.gpus[0].gpu_milli_total)
+        if gpu_utilization < 0.7:
+            gpu_score = (1.0 - gpu_utilization) * 200
+        else:
+            gpu_score = (1.0 - gpu_utilization) * 100
+    else:
+        gpu_score = 0
+
+    # Combine scores
+    score = cpu_score + memory_score + gpu_score
+
+    # Penalize fragmentation for GPU nodes
+    if pod.num_gpu > 0:
+        free_gpu_millis = sum(gpu.gpu_milli_left for gpu in node.gpus)
+        gpu_fragmentation_factor = free_gpu_millis % pod.gpu_milli
+        score -= gpu_fragmentation_factor * 0.2
+
+    # Penalize low CPU and memory capacity
+    if node.cpu_milli_total < 2000 or node.memory_mib_total < 12:
+        score -= (2000 - node.cpu_milli_total) * 0.01
+        score -= (12 - node.memory_mib_total) * 0.1
+
+    # Encourage balanced node loading
+    balance_factor = abs(node.cpu_milli_left / max(1, node.memory_mib_left) - pod.cpu_milli / max(1, pod.memory_mib))
+    score -= balance_factor * 0.5
+
+    # Bonus for nodes with ample resources
+    if node.cpu_milli_left > pod.cpu_milli * 2 and node.memory_mib_left > pod.memory_mib * 2:
+        score += 25
+
+    # Penalize nodes with unequal GPU resource left
+    if pod.num_gpu > 0:
+        gpu_imbalance = max(gpu.gpu_milli_left for gpu in node.gpus) - min(gpu.gpu_milli_left for gpu in node.gpus)
+        score -= gpu_imbalance * 0.05
+
+    # Bonus for nodes with high resources
+    if node.cpu_milli_total > 10000 and node.memory_mib_total > 64:
+        score += 15
+
+    # Penalize if node is nearly full
+    if cpu_utilization > 0.9 or memory_utilization > 0.9:
+        score -= 20
+    
+    return max(1, int(score))
+
+
+def funsearch_4816_scheduler(pod: Pod, node: Node) -> int:
+    """FunSearch discovered policy with score 0.4816 - balance and efficiency focused."""
+    if (pod.cpu_milli > node.cpu_milli_left or 
+        pod.memory_mib > node.memory_mib_left or 
+        pod.num_gpu > node.gpu_left):
+        return 0
+    
+    if pod.num_gpu > 0:
+        available_gpus = 0
+        for gpu in node.gpus:
+            if gpu.gpu_milli_left >= pod.gpu_milli:
+                available_gpus += 1
+        if available_gpus < pod.num_gpu:
+            return 0
+    
+    score = 0.0
+    
+    cpu_util = (node.cpu_milli_total - node.cpu_milli_left + pod.cpu_milli) / max(1, node.cpu_milli_total)
+    mem_util = (node.memory_mib_total - node.memory_mib_left + pod.memory_mib) / max(1, node.memory_mib_total)
+    balance_score = 1 - abs(cpu_util - mem_util)
+    efficiency_score = (cpu_util * mem_util) ** 0.5
+    
+    if pod.num_gpu > 0:
+        eligible_gpus = [g for g in node.gpus if g.gpu_milli_left >= pod.gpu_milli][:pod.num_gpu]
+        gpu_util = sum((g.gpu_milli_total - g.gpu_milli_left + pod.gpu_milli) for g in eligible_gpus) / max(1, sum(g.gpu_milli_total for g in eligible_gpus))
+        gpu_frag = sum((g.gpu_milli_left - pod.gpu_milli) ** 2 for g in eligible_gpus) / max(1, sum(g.gpu_milli_left for g in eligible_gpus))
+        isolation_score = 0.5 - abs(0.5 - (gpu_frag ** 0.5))
+        score = (cpu_util * 0.25 + mem_util * 0.15 + gpu_util * 0.45 + balance_score * 0.05 + efficiency_score * 0.05 - gpu_frag * 0.05 + isolation_score * 0.1) * 10000
+    else:
+        frag_score = min((node.cpu_milli_left % max(1, pod.cpu_milli)) / node.cpu_milli_total, (node.memory_mib_left % max(1, pod.memory_mib)) / node.memory_mib_total)
+        score = (cpu_util * 0.45 + mem_util * 0.35 + balance_score * 0.1 + efficiency_score * 0.1 - frag_score * 0.1) * 10000
+    
+    return max(1, int(score))
+
+
+def funsearch_4800_scheduler(pod: Pod, node: Node) -> int:
+    """FunSearch discovered policy with score 0.4800 - GPU optimization with balance."""
+    if (pod.cpu_milli > node.cpu_milli_left or 
+        pod.memory_mib > node.memory_mib_left or 
+        pod.num_gpu > node.gpu_left):
+        return 0
+    
+    if pod.num_gpu > 0:
+        available_gpus = 0
+        for gpu in node.gpus:
+            if gpu.gpu_milli_left >= pod.gpu_milli:
+                available_gpus += 1
+        if available_gpus < pod.num_gpu:
+            return 0
+    
+    score = 0.0
+    
+    cpu_util = (node.cpu_milli_total - node.cpu_milli_left + pod.cpu_milli) / node.cpu_milli_total
+    mem_util = (node.memory_mib_total - node.memory_mib_left + pod.memory_mib) / node.memory_mib_total
+    balance_score = (1 - abs(cpu_util - mem_util)) ** 2.5 * 300
+    
+    gpu_score = 0
+    if pod.num_gpu > 0:
+        viable_gpus = sorted([g for g in node.gpus if g.gpu_milli_left >= pod.gpu_milli], key=lambda g: g.gpu_milli_left)
+        if len(viable_gpus) >= pod.num_gpu:
+            gpu_eff = sum(1 - (g.gpu_milli_left - pod.gpu_milli) / g.gpu_milli_total for g in viable_gpus[:pod.num_gpu]) / pod.num_gpu
+            gpu_score = (gpu_eff ** 2) * 450
+    
+    frag_score = min(node.cpu_milli_left - pod.cpu_milli, node.memory_mib_left - pod.memory_mib) ** 0.6 / max(node.cpu_milli_total, node.memory_mib_total) * 300
+    
+    util_score = (min(cpu_util, mem_util) * 0.6 + max(cpu_util, mem_util) * 0.4) * 600
+    score = util_score + balance_score + gpu_score + frag_score
+    
+    return max(1, int(score))
 
 
 # def worst_fit_scheduler(pod: Pod, node: Node) -> int:
@@ -374,62 +524,7 @@ def best_fit_scheduler(pod: Pod, node: Node) -> int:
     
 #     return max(1, score)
 
-def priority_function_rank1(pod, node):
-    """
-    Calculate priority score for placing pod on node.
-    Higher score = better placement.
-    
-    Strategy: Gentle balance penalty with utilization-based GPU selection
-    """
-    
-    # Basic feasibility check
-    if (pod.cpu_milli > node.cpu_milli_left or 
-        pod.memory_mib > node.memory_mib_left or 
-        pod.num_gpu > node.gpu_left):
-        return 0
-    
-    if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
-        if available_gpus < pod.num_gpu:
-            return 0
-    
-    # Core scoring logic
-    score = 0.0
-    
-    cpu_util = (node.cpu_milli_total - node.cpu_milli_left + pod.cpu_milli) / node.cpu_milli_total
-    mem_util = (node.memory_mib_total - node.memory_mib_left + pod.memory_mib) / node.memory_mib_total
-    balance_score = 1 - abs(cpu_util - mem_util) ** 0.6  # Gentlest penalty
-    
-    efficiency = 0
-    if pod.num_gpu > 0:
-        # Sort by utilization ratio (ascending) - fill least utilized first
-        suitable_gpus = sorted([g for g in node.gpus if g.gpu_milli_left >= pod.gpu_milli], 
-                             key=lambda g: g.gpu_milli_left / g.gpu_milli_total)
-        selected_gpus = suitable_gpus[:pod.num_gpu]
-        gpu_util = sum((g.gpu_milli_total - g.gpu_milli_left + pod.gpu_milli) / g.gpu_milli_total 
-                      for g in selected_gpus) / pod.num_gpu
-        frag_score = 1 - (max(g.gpu_milli_left for g in selected_gpus) - 
-                         min(g.gpu_milli_left for g in selected_gpus)) / max(1, sum(g.gpu_milli_total for g in selected_gpus))
-        gpu_score = (1 - gpu_util) * 0.7 + frag_score * 0.3
-        score = (cpu_util * 0.15 + mem_util * 0.15 + gpu_score * 0.6 + balance_score * 0.1) * 120
-    else:
-        efficiency = (cpu_util + mem_util) / 2
-        frag_penalty = abs(cpu_util - mem_util) * 0.25
-        score = (efficiency * 0.7 + balance_score * 0.3 - frag_penalty) * 100
-    
-    # Conditional bonuses/penalties
-    if efficiency == 0:
-        return 0
-    
-    if balance_score > 0.75 and efficiency > 0.65:
-        score *= 1.2
-    elif max(cpu_util, mem_util) > 0.9:
-        score *= 0.7
-    
-    return max(1, int(score))
+
 
 # ============= TESTING FRAMEWORK =============
 
@@ -438,15 +533,17 @@ class SchedulerTester:
         self.original_cluster = cluster
         self.original_pods = pods
         self.schedulers = {
-            # 'first_fit': first_fit_scheduler,
+            'first_fit': first_fit_scheduler,
             'best_fit': best_fit_scheduler,
+            'funsearch_4901': funsearch_4901_scheduler,
+            'funsearch_4816': funsearch_4816_scheduler,
+            'funsearch_4800': funsearch_4800_scheduler,
             # 'worst_fit': worst_fit_scheduler,
             # 'hybrid': hybrid_scheduler,
             # 'workload_aware': workload_aware_scheduler,
             # 'gpu_first': gpu_first_packing_scheduler,
             # 'temporal_aware': temporal_aware_scheduler,
             # 'compact_first': compact_first_fit_scheduler,
-            'pf': priority_function_rank1
         }
         
     def deep_copy_cluster(self, cluster: Cluster) -> Cluster:
