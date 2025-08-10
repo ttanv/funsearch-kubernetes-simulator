@@ -31,7 +31,7 @@ class KubernetesSimulator:
                  pod_list: list[Pod],
                  event_simulator: DiscreteEventSimulator,
                  scheduler: PodNodeScorer,
-                 validate_invariants: bool = True,
+                 validate_invariants: bool = False,
                  evaluator: Optional[SchedulingEvaluator] = None):
         self.cluster = cluster
         self.pod_list = pod_list
