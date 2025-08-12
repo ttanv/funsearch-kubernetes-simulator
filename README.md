@@ -62,6 +62,9 @@ pip install -r requirements.txt
 # Evaluate existing policies
 python tests/test_scheduler.py
 
+# View the code for the top 3 discovered policies
+# See tests/test_scheduler.py for implementation details
+
 
 
 # Configure API key in configs/llm_config.json
