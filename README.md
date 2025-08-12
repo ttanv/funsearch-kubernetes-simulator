@@ -59,6 +59,14 @@ score -= gpu_fragmentation_factor * 0.2
 # Install dependencies
 pip install -r requirements.txt
 
+# Evaluate existing policies
+python tests/test_scheduler.py
+
+
+
+# Configure API key in configs/llm_config.json
+# Replace "API_KEY" with your OpenRouter API key
+
 # Run FunSearch to discover new policies  
 python funsearch/funsearch_integration.py
 ```
