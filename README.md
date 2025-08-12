@@ -28,7 +28,7 @@ After ~2,000 generations of evolution, FunSearch discovered scheduling policies 
 | 🧠 Best-Fit (classical) | 42.6% | 23.6% | 68.6% | 0.039 |
 | 📊 First-Fit (baseline) | 43.4% | 24.2% | 69.7% | 0.065 |
 
-*Tested on 8,152 pods across 16 nodes with real OpenB datacenter traces (each run takes around 0.1s)*
+*Tested on 8,152 pods across 16 nodes with real Alibaba datacenter traces (each run takes around 0.1s)*
 
 **Key Improvements:**
 - **+7.7% CPU utilization** and **+10.6% memory utilization** vs best classical algorithm
