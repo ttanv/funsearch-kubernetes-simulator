@@ -1,8 +1,6 @@
-# KubeSmarter: AI-Driven Kubernetes Scheduler Optimization
+# FunSearch-Driven Kubernetes Scheduler Optimization
 
 > *Using LLM-powered program search to discover novel scheduling algorithms for GPU-accelerated workloads*
-
-**🎥 Demo Video**: *[2-minute Loom showcase coming soon]*
 
 ## Overview
 
