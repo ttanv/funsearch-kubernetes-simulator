@@ -23,6 +23,9 @@ class DiscreteEventSimulator:
     def __init__(self, pod_list: list[Pod]):
         self.event_heap = self._populate_heap(pod_list)
         heapq.heapify(self.event_heap)
+        
+        # Used to easily get the next del event time
+        self.deletion_heap = []
         return
 
     def _populate_heap(self, pod_list: list[Pod]):
@@ -34,7 +37,13 @@ class DiscreteEventSimulator:
         return events
 
     def pop_event(self):
-        return heapq.heappop(self.event_heap)
+        popped_event = heapq.heappop(self.event_heap)
+        
+        # Ensure element is also removed from del heap
+        if popped_event[1].event_type == EventType.DELETION:
+            heapq.heappop(self.deletion_heap)
+        
+        return popped_event
 
     def peak_event(self):
         return self.event_heap[0]
@@ -45,15 +54,14 @@ class DiscreteEventSimulator:
     def push_deletion_event(self, pod: Pod):
         del_event = Event(EventType.DELETION, pod)
         deletion_time = pod.creation_time + pod.duration_time
-        # Assumes pod.deletion_time has been set by the scheduler.
+        
+        heapq.heappush(self.deletion_heap, deletion_time)
         heapq.heappush(self.event_heap, (deletion_time, del_event))
         
     def repush_creation_event(self, pod: Pod):
         # In case no resources free
-        for (time, event) in self.event_heap:
-                if event.event_type == EventType.DELETION:
-                    new_time = time + 1
-                    pod.creation_time = new_time
-                    new_event = (new_time, Event(EventType.CREATION, pod))
-                    heapq.heappush(self.event_heap, new_event)
-                    return
+        post_deletion_time = self.deletion_heap[0] + 1
+        pod.creation_time = post_deletion_time
+        new_event = (post_deletion_time, Event(EventType.CREATION, pod))
+        heapq.heappush(self.event_heap, new_event)
+    
