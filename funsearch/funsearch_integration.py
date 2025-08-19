@@ -176,9 +176,9 @@ class SimpleFunSearch:
         baseline_policies = [
             self._create_first_fit_policy(),
             self._create_best_fit_policy(),
-            # self._create_worst_fit_policy(),
-            # self._create_gpu_aware_policy(),
-            # self._create_utilization_based_policy(),
+            self._create_worst_fit_policy(),
+            self._create_gpu_aware_policy(),
+            self._create_utilization_based_policy(),
         ]
         
         # Add some random variations
