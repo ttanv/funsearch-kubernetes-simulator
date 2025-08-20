@@ -153,7 +153,7 @@ class SimpleFunSearch:
         self.elite_size = funsearch_config["elite_size"]
         
         # Deduplication parameters
-        self.similarity_threshold = funsearch_config.get("similarity_threshold", 0.85)  # 85% similarity cutoff
+        self.similarity_threshold = funsearch_config.get("similarity_threshold", 0.95)  # 85% similarity cutoff
         
         # Parallel execution parameters
         self.max_workers = funsearch_config.get("max_workers", 8)
@@ -176,9 +176,10 @@ class SimpleFunSearch:
         baseline_policies = [
             self._create_first_fit_policy(),
             self._create_best_fit_policy(),
-            self._create_worst_fit_policy(),
-            self._create_gpu_aware_policy(),
-            self._create_utilization_based_policy(),
+            self._create_random_policy()
+            # self._create_worst_fit_policy(),
+            # self._create_gpu_aware_policy(),
+            # self._create_utilization_based_policy(),
         ]
         
         # Add some random variations
@@ -463,7 +464,9 @@ def priority_function(pod, node):
         """Generate a single policy - for parallel execution"""
         try:
             # Select parent policies
-            parents = random.sample(elite_policies, min(2, len(elite_policies)))
+            parents = random.sample(elite_policies, min(1, len(elite_policies)))
+            
+            parents += random.sample(self.population, 1)
             
             # Generate new policy
             new_code = self.code_generator.generate_policy(
@@ -496,16 +499,14 @@ def priority_function(pod, node):
         elite_policies = self.population[:self.elite_size]
         
         # Generate new policies
-        policies_to_generate = min(8, self.population_size - len(elite_policies))
+        policies_to_generate = min(20, self.population_size - len(elite_policies))
         
         if policies_to_generate == 0:
             print("No new policies to generate")
             return
             
         # Create performance feedback
-        feedback = f"Elite policies achieve good performance by balancing resource utilization "
-        feedback += f"and considering GPU/CPU workload separation. "
-        feedback += f"Focus on: CPU/mem/GPU util, efficiency, GPU placement strategies, fragmentation reduction."
+        feedback = ""
         
         print(f"Generating {policies_to_generate} policies in parallel...")
         
