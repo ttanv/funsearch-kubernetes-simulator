@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Callable
 from contextlib import contextmanager
 import math
 import operator
+import random
 
 class SafeExecutor:
     """Safely check LLM-generated scheduling policy functions"""
@@ -174,48 +175,43 @@ class PolicyTemplate:
     TEMPLATE = '''
 def priority_function(pod, node):
     """
-    Calculate priority score for placing pod on node.
-    Higher score = better placement.
+    Calculate priority score for pod placement on node (higher = better).
     
-    ## Data Structure Definitions
-
-    # Pod Object
-    # A 'pod' represents a workload request with specific resource requirements.
-    - pod.cpu_milli (int): CPU requested in thousandths of a core.
-    - pod.memory_mib (int): Memory requested in Mebibytes.
-    - pod.num_gpu (int): The number of individual GPUs required.
-    - pod.gpu_milli (int): The compute power required from each GPU.
-
-    # Node Object
-    # A 'node' represents a single machine in the cluster that can host pods.
-    - node.cpu_milli_left (int): Remaining available CPU on the node.
-    - node.memory_mib_left (int): Remaining available memory on the node.
-    - node.gpu_left (int): The count of available (unassigned) GPUs.
-    - node.cpu_milli_total (int): Total CPU capacity of the node.
-    - node.memory_mib_total (int): Total memory capacity of the node.
-    - node.gpus (list[GPU]): A list of 'GPU' objects available on this node.
-
-    # GPU Object
-    # A 'gpu' object represents a single GPU. These are found inside the 'node.gpus' list.
-    - gpu.gpu_milli_left (int): Remaining available compute on this specific GPU.
-    - gpu.gpu_milli_total (int): Total compute capacity of this GPU.
+    EXACT AVAILABLE ATTRIBUTES:
+    Pod:
+      pod.cpu_milli      (int) - CPU requested in milli-cores
+      pod.memory_mib     (int) - Memory requested in MiB  
+      pod.num_gpu        (int) - Number of GPUs needed
+      pod.gpu_milli      (int) - GPU compute per GPU needed
+    
+    Node:
+      node.cpu_milli_left     (int) - Available CPU
+      node.cpu_milli_total    (int) - Total CPU capacity
+      node.memory_mib_left    (int) - Available memory
+      node.memory_mib_total   (int) - Total memory capacity
+      node.gpu_left           (int) - Available GPU count
+      node.gpus               (list[GPU]) - List of GPU objects
+    
+    GPU:
+      gpu.gpu_milli_left      (int) - Available GPU compute
+      gpu.gpu_milli_total     (int) - Total GPU compute capacity
+    
+    USE ONLY THESE ATTRIBUTES. No others exist.
     """
     
-    # Basic feasibility check
+    # Required feasibility checks
     if (pod.cpu_milli > node.cpu_milli_left or 
         pod.memory_mib > node.memory_mib_left or 
         pod.num_gpu > node.gpu_left):
         return 0
     
     if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
+        available_gpus = sum(1 for gpu in node.gpus 
+                           if gpu.gpu_milli_left >= pod.gpu_milli)
         if available_gpus < pod.num_gpu:
             return 0
     
-    # LLM fills in this part
+    # TODO: Calculate score using ONLY the attributes listed above
     score = 0.0
     
     {llm_generated_logic}
@@ -232,18 +228,29 @@ You are generating a kubernetes scheduling policy function. You must ONLY fill i
 
 CONSTRAINTS:
 - Only use basic math operations (+, -, *, /, %, **, abs, min, max)
-- Only use the provided variables: pod, node, cluster_state
-- No imports, no function definitions, no loops
+- Only use the provided variables: pod, node
+- No imports, no function definitions, hasattr, file usage
 - Return a single numeric score
 - Use if/else statements if needed
 - Your generation should have nothing other than the code itself, do not output anything else. (Do not wrap in ```python)
 - IMPORTANT: Every line of code MUST start with exactly 4 spaces for proper indentation
 - Lines inside if/else blocks should start with 8 spaces, nested blocks with 12 spaces, etc.
 
+HINTS:
+Generate a scheduling policy that scores nodes for pod placement. Effective policies often:
+1) Balance resource ratios - penalize nodes where CPU/memory/GPU ratios don't match the pod's requirements
+2) Minimize fragmentation - avoid leaving unusable resource slivers 
+3) Consider future schedulability - sometimes leaving headroom on high-capacity nodes is better than perfect packing
+
 Template to complete:
 {cls.TEMPLATE}
 
 Previous policies and their performance:
+Your solution must either:
+- Use a fundamentally different approach than both examples
+- Introduce at least one concept not present in either example
+- Weight factors in a way neither example does
+
 {cls._format_parent_policies(parent_policies)}
 
 Performance feedback: {performance_feedback}
@@ -276,7 +283,7 @@ class LLMCodeGenerator:
     def __init__(self, llm_client, safe_executor=None, model=None, max_tokens=400, temperature=0.7):
         self.llm_client = llm_client
         self.safe_executor = safe_executor or SafeExecutor()
-        self.model = model or "gpt-3.5-turbo"
+        self.model = model 
         self.max_tokens = max_tokens
         self.temperature = temperature
     
