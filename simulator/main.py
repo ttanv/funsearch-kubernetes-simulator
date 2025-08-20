@@ -42,10 +42,13 @@ class KubernetesSimulator:
         self.max_nodes = 0
         self.waiting_pods = []  # Track pods that failed to schedule
         
-        # Initialize evaluator with total events count
+        # Initialize evaluator with total simulation time
         if self.evaluator:
-            total_events = len(event_simulator.event_heap)
-            self.evaluator.initialize(total_events)
+            # Calculate total simulation time from pod data
+            min_time = min(pod.creation_time for pod in pod_list) if pod_list else 0
+            max_time = max(pod.creation_time + pod.duration_time for pod in pod_list) if pod_list else 0
+            total_simulation_time = max_time - min_time
+            self.evaluator.initialize(total_simulation_time)
              
     def run_schedule(self):
         """
@@ -60,9 +63,9 @@ class KubernetesSimulator:
             elif event.event_type == EventType.CREATION:
                 self._handle_creation(event)
                 
-            # Record event processed for evaluation
+            # Record event processed for evaluation with current time
             if self.evaluator:
-                self.evaluator.record_event_processed(self.cluster)
+                self.evaluator.record_event_processed(self.cluster, time)
                 
             # Update max_nodes with current number of active nodes
             active_nodes = len([node for node in self.cluster.nodes_dict.values() 
