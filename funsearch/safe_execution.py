@@ -28,7 +28,7 @@ class SafeExecutor:
     }
     
     FORBIDDEN_PATTERNS = [
-        'import', '__', 'exec', 'eval', 'open', 'file', 'input', 
+        'import', '__', 'exec', 'eval', 'open', 'input', 
         'raw_input', 'compile', 'globals', 'locals', 'vars',
         'dir', 'hasattr', 'getattr', 'setattr', 'delattr'
     ]
@@ -224,23 +224,18 @@ def priority_function(pod, node):
         """Create prompt that constrains LLM to fill template safely"""
         
         prompt = f"""
-You are generating a kubernetes scheduling policy function. You must ONLY fill in the logic between the comments.
+You are generating an improved kubernetes scheduling policy function. You must ONLY fill in the logic between the comments.
 
 CONSTRAINTS:
 - Only use basic math operations (+, -, *, /, %, **, abs, min, max)
 - Only use the provided variables: pod, node
-- No imports, no function definitions, hasattr, file usage
+- Following are FORBIDDEN: imports, function definitions, use of 'hasattr', any use of 'file'
 - Return a single numeric score
 - Use if/else statements if needed
 - Your generation should have nothing other than the code itself, do not output anything else. (Do not wrap in ```python)
 - IMPORTANT: Every line of code MUST start with exactly 4 spaces for proper indentation
 - Lines inside if/else blocks should start with 8 spaces, nested blocks with 12 spaces, etc.
 
-HINTS:
-Generate a scheduling policy that scores nodes for pod placement. Effective policies often:
-1) Balance resource ratios - penalize nodes where CPU/memory/GPU ratios don't match the pod's requirements
-2) Minimize fragmentation - avoid leaving unusable resource slivers 
-3) Consider future schedulability - sometimes leaving headroom on high-capacity nodes is better than perfect packing
 
 Template to complete:
 {cls.TEMPLATE}
@@ -249,14 +244,17 @@ Previous policies and their performance:
 Your solution must either:
 - Use a fundamentally different approach than both examples
 - Introduce at least one concept not present in either example
+- You can delete some existing concept and replace it
 - Weight factors in a way neither example does
 
-{cls._format_parent_policies(parent_policies)}
+And the new addition must always have a comment dictating 'DIFF_i' where i is the current generation. Each generation must have only one diff.
 
 Performance feedback: {performance_feedback}
 
+{cls._format_parent_policies(parent_policies)}
+
+
 Generate ONLY the logic to replace {{llm_generated_logic}}, nothing else.
-Remember: Each line must start with proper indentation (4 spaces minimum):
 """
         return prompt
     
