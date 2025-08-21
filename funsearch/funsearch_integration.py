@@ -464,9 +464,8 @@ def priority_function(pod, node):
         """Generate a single policy - for parallel execution"""
         try:
             # Select parent policies
-            parents = random.sample(elite_policies, min(1, len(elite_policies)))
+            parents = random.sample(elite_policies, min(2, len(elite_policies)))
             
-            parents += random.sample(self.population, 1)
             
             # Generate new policy
             new_code = self.code_generator.generate_policy(
@@ -499,14 +498,14 @@ def priority_function(pod, node):
         elite_policies = self.population[:self.elite_size]
         
         # Generate new policies
-        policies_to_generate = min(20, self.population_size - len(elite_policies))
+        policies_to_generate = min(15, self.population_size - len(elite_policies))
         
         if policies_to_generate == 0:
             print("No new policies to generate")
             return
             
         # Create performance feedback
-        feedback = ""
+        feedback = f"Current generation: {self.generation}"
         
         print(f"Generating {policies_to_generate} policies in parallel...")
         
