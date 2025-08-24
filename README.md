@@ -1,6 +1,6 @@
 # FunSearch-Driven Kubernetes Scheduler Optimization
 
-> *Using LLM-powered program search to discover novel scheduling algorithms for GPU-accelerated workloads*
+> *Note: main branch contains the original demoed version, dev branch contains realism improvements and fixes. Uses time-stepped evaluator and focuses on makespan metrics*
 
 ## Overview
 
