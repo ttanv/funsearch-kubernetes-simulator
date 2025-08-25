@@ -2,7 +2,6 @@ from typing import Callable, Optional
 
 from simulator.entities import Cluster, Node, GPU, Pod
 from simulator.event_simulator import DiscreteEventSimulator, Event, EventType
-from simulator.evaluator import SchedulingEvaluator
 
 # Type alias for a function that takes a Pod and a Node and returns an int
 PodNodeScorer = Callable[[Pod, Node], int]
@@ -32,7 +31,7 @@ class KubernetesSimulator:
                  event_simulator: DiscreteEventSimulator,
                  scheduler: PodNodeScorer,
                  validate_invariants: bool = False,
-                 evaluator: Optional[SchedulingEvaluator] = None):
+                 evaluator = None):
         self.cluster = cluster
         self.pod_list = pod_list
         self.event_simulator = event_simulator
