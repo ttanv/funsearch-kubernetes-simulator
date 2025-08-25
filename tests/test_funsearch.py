@@ -148,6 +148,13 @@ class TestFunSearchIntegration(unittest.TestCase):
         # Mock the config file
         mock_config = {
             "openai": {"api_key": "test-key"},
+            "openrouter": {
+                "api_key": "test-key",
+                "base_url": "http://localhost:9702/v1",
+                "model": "qwen3-coder",
+                "max_tokens": 1024,
+                "temperature": 0.7
+            },
             "safe_execution": {"timeout_seconds": 3},
             "funsearch": {
                 "population_size": 5,
