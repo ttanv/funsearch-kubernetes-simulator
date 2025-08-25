@@ -13,156 +13,130 @@ from benchmarks.parser import TraceParser
 from simulator.entities import Cluster, Node, Pod
 from simulator.event_simulator import DiscreteEventSimulator
 from simulator.main import KubernetesSimulator
-from simulator.evaluator import SchedulingEvaluator
+from simulator.repush_evaluator import SchedulingEvaluator
 
 # ============= FUNSEARCH SCHEDULER IMPLEMENTATIONS =============
 
-def funsearch_v1_scheduler(pod: Pod, node: Node) -> int:
-    """FunSearch discovered policy with score 0.4901"""
+
+# VERSION 3: RESOURCE AFFINITY APPROACH
+def priority_function(pod, node):
+    """
+    Calculate priority score for pod placement on node (higher = better).
+    
+    EXACT AVAILABLE ATTRIBUTES:
+    Pod:
+      pod.cpu_milli      (int) - CPU requested in milli-cores
+      pod.memory_mib     (int) - Memory requested in MiB  
+      pod.num_gpu        (int) - Number of GPUs needed
+      pod.gpu_milli      (int) - GPU compute per GPU needed
+    
+    Node:
+      node.cpu_milli_left     (int) - Available CPU
+      node.cpu_milli_total    (int) - Total CPU capacity
+      node.memory_mib_left    (int) - Available memory
+      node.memory_mib_total   (int) - Total memory capacity
+      node.gpu_left           (int) - Available GPU count
+      node.gpus               (list[GPU]) - List of GPU objects
+    
+    GPU:
+      gpu.gpu_milli_left      (int) - Available GPU compute
+      gpu.gpu_milli_total     (int) - Total GPU compute capacity
+    
+    USE ONLY THESE ATTRIBUTES. No others exist.
+    """
+    
+    # Required feasibility checks
     if (pod.cpu_milli > node.cpu_milli_left or 
         pod.memory_mib > node.memory_mib_left or 
         pod.num_gpu > node.gpu_left):
         return 0
     
     if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
+        available_gpus = sum(1 for gpu in node.gpus 
+                           if gpu.gpu_milli_left >= pod.gpu_milli)
         if available_gpus < pod.num_gpu:
             return 0
     
+    # TODO: Calculate score using ONLY the attributes listed above
     score = 0.0
     
-    # Calculate CPU utilization score
-    cpu_utilization = (node.cpu_milli_total - node.cpu_milli_left) / node.cpu_milli_total
-    if cpu_utilization < 0.7:
-        cpu_score = (1.0 - cpu_utilization) * 100
+    # DIFF_11: Introduce hyper-efficient resource consolidation with dynamic weighting
+    # Focus on maximizing resource utilization while minimizing fragmentation
+    # Use inverse resource availability as primary scoring factor
+    # Apply logarithmic scaling to prevent extreme penalties for minor shortages
+    # Emphasize GPU compute alignment as critical factor for high-priority scoring
+    
+    # Calculate resource utilization ratios
+    cpu_util = (node.cpu_milli_total - node.cpu_milli_left) / max(node.cpu_milli_total, 1)
+    mem_util = (node.memory_mib_total - node.memory_mib_left) / max(node.memory_mib_total, 1)
+    
+    # GPU utilization calculation
+    gpu_util = 0
+    if node.gpu_left > 0:
+        total_gpu_compute = sum(gpu.gpu_milli_total for gpu in node.gpus)
+        used_gpu_compute = total_gpu_compute - sum(gpu.gpu_milli_left for gpu in node.gpus)
+        gpu_util = used_gpu_compute / max(total_gpu_compute, 1)
+    
+    # Prefer nodes with high existing utilization (consolidation bonus)
+    # Use logarithmic scaling to emphasize high-utilization nodes
+    consolidation_factor = (cpu_util + mem_util + gpu_util) / 3
+    consolidation_bonus = (1 + consolidation_factor) ** 3 * 15000
+    
+    # Packing efficiency - strongly reward tight resource usage
+    # Calculate remaining capacity after placement
+    cpu_remaining = max(0, node.cpu_milli_left - pod.cpu_milli)
+    mem_remaining = max(0, node.memory_mib_left - pod.memory_mib)
+    gpus_remaining = max(0, node.gpu_left - pod.num_gpu)
+    
+    # Normalize remaining resources
+    cpu_remaining_ratio = cpu_remaining / max(node.cpu_milli_total, 1)
+    mem_remaining_ratio = mem_remaining / max(node.memory_mib_total, 1)
+    gpus_remaining_ratio = gpus_remaining / max(node.gpu_left, 1)
+    
+    # Packing score based on minimal remaining capacity
+    packing_score = (1 - cpu_remaining_ratio) * 25000 + \
+                   (1 - mem_remaining_ratio) * 25000 + \
+                   (1 - gpus_remaining_ratio) * 20000
+    
+    # GPU compute alignment bonus - critical for GPU workloads
+    gpu_alignment_bonus = 0
+    if pod.num_gpu > 0:
+        # Check if we can satisfy GPU compute requirement
+        total_available_compute = sum(gpu.gpu_milli_left for gpu in node.gpus)
+        needed_compute = pod.num_gpu * pod.gpu_milli
+        if total_available_compute >= needed_compute:
+            # Reward precise compute matching
+            match_ratio = min(1.0, needed_compute / max(total_available_compute, 1))
+            gpu_alignment_bonus = (match_ratio ** 2) * 35000
+    
+    # Resource balance penalty - discourage heavily skewed resource usage
+    util_ratios = [cpu_util, mem_util, gpu_util]
+    if len(util_ratios) > 1:
+        avg_util = sum(util_ratios) / len(util_ratios)
+        variance = sum((r - avg_util)**2 for r in util_ratios) / len(util_ratios)
+        balance_penalty = variance * 10000
     else:
-        cpu_score = (1.0 - cpu_utilization) * 50
-
-    # Calculate memory utilization score
-    memory_utilization = (node.memory_mib_total - node.memory_mib_left) / node.memory_mib_total
-    if memory_utilization < 0.7:
-        memory_score = (1.0 - memory_utilization) * 100
+        balance_penalty = 0
+    
+    # Fragmentation penalty - discourage uneven remaining resource distribution
+    remaining_ratios = [cpu_remaining_ratio, mem_remaining_ratio, gpus_remaining_ratio]
+    if len(remaining_ratios) > 1:
+        avg_remaining = sum(remaining_ratios) / len(remaining_ratios)
+        frag_variance = sum((r - avg_remaining)**2 for r in remaining_ratios) / len(remaining_ratios)
+        fragmentation_penalty = frag_variance * 15000
     else:
-        memory_score = (1.0 - memory_utilization) * 50
-
-    # Calculate GPU utilization score
-    if pod.num_gpu > 0:
-        gpu_utilization = (node.gpu_left * node.gpus[0].gpu_milli_total - sum(gpu.gpu_milli_left for gpu in node.gpus)) / (node.gpu_left * node.gpus[0].gpu_milli_total)
-        if gpu_utilization < 0.7:
-            gpu_score = (1.0 - gpu_utilization) * 200
-        else:
-            gpu_score = (1.0 - gpu_utilization) * 100
-    else:
-        gpu_score = 0
-
-    # Combine scores
-    score = cpu_score + memory_score + gpu_score
-
-    # Penalize fragmentation for GPU nodes
-    if pod.num_gpu > 0:
-        free_gpu_millis = sum(gpu.gpu_milli_left for gpu in node.gpus)
-        gpu_fragmentation_factor = free_gpu_millis % pod.gpu_milli
-        score -= gpu_fragmentation_factor * 0.2
-
-    # Penalize low CPU and memory capacity
-    if node.cpu_milli_total < 2000 or node.memory_mib_total < 12:
-        score -= (2000 - node.cpu_milli_total) * 0.01
-        score -= (12 - node.memory_mib_total) * 0.1
-
-    # Encourage balanced node loading
-    balance_factor = abs(node.cpu_milli_left / max(1, node.memory_mib_left) - pod.cpu_milli / max(1, pod.memory_mib))
-    score -= balance_factor * 0.5
-
-    # Bonus for nodes with ample resources
-    if node.cpu_milli_left > pod.cpu_milli * 2 and node.memory_mib_left > pod.memory_mib * 2:
-        score += 25
-
-    # Penalize nodes with unequal GPU resource left
-    if pod.num_gpu > 0:
-        gpu_imbalance = max(gpu.gpu_milli_left for gpu in node.gpus) - min(gpu.gpu_milli_left for gpu in node.gpus)
-        score -= gpu_imbalance * 0.05
-
-    # Bonus for nodes with high resources
-    if node.cpu_milli_total > 10000 and node.memory_mib_total > 64:
-        score += 15
-
-    # Penalize if node is nearly full
-    if cpu_utilization > 0.9 or memory_utilization > 0.9:
-        score -= 20
+        fragmentation_penalty = 0
     
-    return max(1, int(score))
-
-
-def funsearch_v2_scheduler(pod: Pod, node: Node) -> int:
-    """FunSearch discovered policy with score 0.4816 - balance and efficiency focused."""
-    if (pod.cpu_milli > node.cpu_milli_left or 
-        pod.memory_mib > node.memory_mib_left or 
-        pod.num_gpu > node.gpu_left):
-        return 0
+    # Base score calculation
+    score = consolidation_bonus + packing_score + gpu_alignment_bonus - balance_penalty - fragmentation_penalty
     
-    if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
-        if available_gpus < pod.num_gpu:
-            return 0
+    # Tie-breaking based on resource requirements
+    tie_breaker = (pod.cpu_milli + pod.memory_mib + pod.num_gpu) % 25
+    score += tie_breaker * 1200
     
-    score = 0.0
-    
-    cpu_util = (node.cpu_milli_total - node.cpu_milli_left + pod.cpu_milli) / max(1, node.cpu_milli_total)
-    mem_util = (node.memory_mib_total - node.memory_mib_left + pod.memory_mib) / max(1, node.memory_mib_total)
-    balance_score = 1 - abs(cpu_util - mem_util)
-    efficiency_score = (cpu_util * mem_util) ** 0.5
-    
-    if pod.num_gpu > 0:
-        eligible_gpus = [g for g in node.gpus if g.gpu_milli_left >= pod.gpu_milli][:pod.num_gpu]
-        gpu_util = sum((g.gpu_milli_total - g.gpu_milli_left + pod.gpu_milli) for g in eligible_gpus) / max(1, sum(g.gpu_milli_total for g in eligible_gpus))
-        gpu_frag = sum((g.gpu_milli_left - pod.gpu_milli) ** 2 for g in eligible_gpus) / max(1, sum(g.gpu_milli_left for g in eligible_gpus))
-        isolation_score = 0.5 - abs(0.5 - (gpu_frag ** 0.5))
-        score = (cpu_util * 0.25 + mem_util * 0.15 + gpu_util * 0.45 + balance_score * 0.05 + efficiency_score * 0.05 - gpu_frag * 0.05 + isolation_score * 0.1) * 10000
-    else:
-        frag_score = min((node.cpu_milli_left % max(1, pod.cpu_milli)) / node.cpu_milli_total, (node.memory_mib_left % max(1, pod.memory_mib)) / node.memory_mib_total)
-        score = (cpu_util * 0.45 + mem_util * 0.35 + balance_score * 0.1 + efficiency_score * 0.1 - frag_score * 0.1) * 10000
-    
-    return max(1, int(score))
-
-
-def funsearch_v3_scheduler(pod: Pod, node: Node) -> int:
-    """FunSearch discovered policy with score 0.4800 - GPU optimization with balance."""
-    if (pod.cpu_milli > node.cpu_milli_left or 
-        pod.memory_mib > node.memory_mib_left or 
-        pod.num_gpu > node.gpu_left):
-        return 0
-    
-    if pod.num_gpu > 0:
-        available_gpus = 0
-        for gpu in node.gpus:
-            if gpu.gpu_milli_left >= pod.gpu_milli:
-                available_gpus += 1
-        if available_gpus < pod.num_gpu:
-            return 0
-    
-    score = 0.0
-    
-    cpu_util = (node.cpu_milli_total - node.cpu_milli_left + pod.cpu_milli) / node.cpu_milli_total
-    mem_util = (node.memory_mib_total - node.memory_mib_left + pod.memory_mib) / node.memory_mib_total
-    balance_score = (1 - abs(cpu_util - mem_util)) ** 2.5 * 300
-    
-    gpu_score = 0
-    if pod.num_gpu > 0:
-        viable_gpus = sorted([g for g in node.gpus if g.gpu_milli_left >= pod.gpu_milli], key=lambda g: g.gpu_milli_left)
-        if len(viable_gpus) >= pod.num_gpu:
-            gpu_eff = sum(1 - (g.gpu_milli_left - pod.gpu_milli) / g.gpu_milli_total for g in viable_gpus[:pod.num_gpu]) / pod.num_gpu
-            gpu_score = (gpu_eff ** 2) * 450
-    
-    frag_score = min(node.cpu_milli_left - pod.cpu_milli, node.memory_mib_left - pod.memory_mib) ** 0.6 / max(node.cpu_milli_total, node.memory_mib_total) * 300
-    
-    util_score = (min(cpu_util, mem_util) * 0.6 + max(cpu_util, mem_util) * 0.4) * 600
-    score = util_score + balance_score + gpu_score + frag_score
+    # Small bonus for nodes with moderate remaining capacity
+    headroom_bonus = min(cpu_remaining_ratio + mem_remaining_ratio + gpus_remaining_ratio, 0.5) * 3000
+    score += headroom_bonus
     
     return max(1, int(score))
 
@@ -227,9 +201,7 @@ class SchedulerTester:
         self.schedulers = {
             'first_fit': first_fit_scheduler,
             'best_fit': best_fit_scheduler,
-            'funsearch_v1': funsearch_v1_scheduler,
-            'funsearch_v2': funsearch_v2_scheduler,
-            'funsearch_v3': funsearch_v3_scheduler,
+            'funsearch_func': priority_function,
         }
         
     def deep_copy_cluster(self, cluster: Cluster) -> Cluster:
@@ -317,15 +289,14 @@ class SchedulerTester:
             print(f"  Policy Score (0-1):       {metrics['policy_score']:.4f}")
             
             if eval_results:
-                print(f"  Average CPU Utilization:  {eval_results.avg_cpu_utilization:.1%}")
-                print(f"  Average Memory Utilization: {eval_results.avg_memory_utilization:.1%}")
-                print(f"  Average GPU Count Util:   {eval_results.avg_gpu_count_utilization:.1%}")
-                print(f"  Average GPU Memory Util:  {eval_results.avg_gpu_memory_utilization:.1%}")
-                print(f"  GPU Fragmentation Score:  {eval_results.gpu_fragmentation_score:.3f}")
-                print(f"  Utilization Snapshots:    {eval_results.num_snapshots}")
+                print(f"  GPU Fragmentation Score:    {eval_results.gpu_fragmentation_score:.3f}")
+                print(f"  Peak Nodes Used:            {eval_results.peak_nodes_used}")
+                print(f"  Total Scheduling Attempts:  {eval_results.total_scheduling_attempts}")
+                print(f"  Total Repushes:             {eval_results.total_repush_events}")
+                print(f"  Fragmentation Events:       {eval_results.num_fragmentation_events}")
             else:
-                print("  Evaluation Results:       Not available")
-            
+                print("  Evaluation Results:         Not available")
+
             if 'error' in metrics:
                 print(f"  ERROR: {metrics['error']}")
         
