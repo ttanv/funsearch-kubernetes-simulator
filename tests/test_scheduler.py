@@ -17,7 +17,7 @@ from simulator.evaluator import SchedulingEvaluator
 
 # ============= FUNSEARCH SCHEDULER IMPLEMENTATIONS =============
 
-def funsearch_4901_scheduler(pod: Pod, node: Node) -> int:
+def funsearch_v1_scheduler(pod: Pod, node: Node) -> int:
     """FunSearch discovered policy with score 0.4901"""
     if (pod.cpu_milli > node.cpu_milli_left or 
         pod.memory_mib > node.memory_mib_left or 
@@ -96,7 +96,7 @@ def funsearch_4901_scheduler(pod: Pod, node: Node) -> int:
     return max(1, int(score))
 
 
-def funsearch_4816_scheduler(pod: Pod, node: Node) -> int:
+def funsearch_v2_scheduler(pod: Pod, node: Node) -> int:
     """FunSearch discovered policy with score 0.4816 - balance and efficiency focused."""
     if (pod.cpu_milli > node.cpu_milli_left or 
         pod.memory_mib > node.memory_mib_left or 
@@ -131,7 +131,7 @@ def funsearch_4816_scheduler(pod: Pod, node: Node) -> int:
     return max(1, int(score))
 
 
-def funsearch_4800_scheduler(pod: Pod, node: Node) -> int:
+def funsearch_v3_scheduler(pod: Pod, node: Node) -> int:
     """FunSearch discovered policy with score 0.4800 - GPU optimization with balance."""
     if (pod.cpu_milli > node.cpu_milli_left or 
         pod.memory_mib > node.memory_mib_left or 
@@ -227,9 +227,9 @@ class SchedulerTester:
         self.schedulers = {
             'first_fit': first_fit_scheduler,
             'best_fit': best_fit_scheduler,
-            'funsearch_4901': funsearch_4901_scheduler,
-            'funsearch_4816': funsearch_4816_scheduler,
-            'funsearch_4800': funsearch_4800_scheduler,
+            'funsearch_v1': funsearch_v1_scheduler,
+            'funsearch_v2': funsearch_v2_scheduler,
+            'funsearch_v3': funsearch_v3_scheduler,
         }
         
     def deep_copy_cluster(self, cluster: Cluster) -> Cluster:
