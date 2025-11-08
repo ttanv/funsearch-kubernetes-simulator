@@ -1,8 +1,5 @@
 # FunSearch-Driven Kubernetes Scheduler Optimization
 
-> *Note: main branch contains the original demoed version, dev branch contains realism improvements and fixes. Uses time-stepped evaluator and focuses on makespan metrics*
-
-**Note:** `main` branch contains the original demoed version, `dev` branch contains realism improvements and fixes. Uses time-stepped evaluator and focuses on makespan metrics.
 
 ## Overview
 
@@ -21,53 +18,10 @@ Traditional schedulers use hand-crafted heuristics. We use FunSearch to automati
 
 ## AI Discovery Results
 
+
+###  Results
+
 After ~2,000 generations of evolution, FunSearch discovered scheduling policies that **significantly outperform classical algorithms**:
-
-### Performance Comparison
-| Algorithm | CPU Util | Memory Util | GPU Util | Fragmentation |
-|-----------|----------|-------------|----------|---------------|
-| **🤖 FunSearch Best** | **45.9%** | **26.1%** | **73.4%** | **0.033** |
-| 🧠 Best-Fit (classical) | 42.6% | 23.6% | 68.6% | 0.039 |
-| 📊 First-Fit (baseline) | 43.4% | 24.2% | 69.7% | 0.065 |
-
-*Tested on 8,152 pods across 16 nodes with real Alibaba datacenter traces (each run takes around 0.1s)*
-
-**Key Improvements:**
-- **+7.7% CPU utilization** and **+10.6% memory utilization** vs best classical algorithm
-- **+7.0% GPU utilization** with **15% less fragmentation** 
-- At datacenter scale, this translates to millions in hardware cost savings and reduced energy consumption
-
-### Champion Policy Innovation
-```python
-# Resource balance detection - penalizes CPU/memory ratio imbalances
-balance_factor = abs(node.cpu_milli_left / max(1, node.memory_mib_left) - pod.cpu_milli / max(1, pod.memory_mib))
-score -= balance_factor * 0.5
-
-# Fragmentation prevention - reduces GPU memory waste  
-gpu_fragmentation_factor = free_gpu_millis % pod.gpu_milli
-score -= gpu_fragmentation_factor * 0.2
-```
-
-**Key Discoveries:**
-- **Resource Balance Detection**: Penalizes CPU/memory ratio imbalances  
-- **Fragmentation Prevention**: Reduces GPU memory waste
-- **Adaptive Node Selection**: Context-aware bonuses for high-capacity nodes
-
-## New Evaluation Metrics (Dev Branch)
-
-The dev branch introduces a **repush-focused evaluator** that tracks scheduling efficiency and wait times instead of just resource utilization. This provides more realistic datacenter scheduling metrics:
-
-### Evaluator Comparison
-
-| Metric | Original Evaluator | Repush Evaluator (Dev) |
-|--------|-------------------|------------------------|
-| **Focus** | Resource utilization over time | Scheduling efficiency & makespan |
-| **Primary Metrics** | CPU/Memory/GPU utilization % | Scheduling attempts, repushes, peak nodes |
-| **Fragmentation** | Time-weighted fragmentation | Event-based fragmentation tracking |
-| **Scoring** | Utilization - fragmentation penalty | Success rate + efficiency - wait penalty |
-| **Use Case** | Resource optimization | Realistic scheduler performance |
-
-### Dev Branch Results
 
 | Algorithm | Policy Score | Scheduling Attempts | Repushes | GPU Fragmentation |
 |-----------|--------------|-------------------|----------|-------------------|
@@ -75,7 +29,7 @@ The dev branch introduces a **repush-focused evaluator** that tracks scheduling 
 | 🧠 Best-Fit (classical) | 0.7855 | 175 | 175 | 0.038 |
 | 📊 First-Fit (baseline) | 0.2934 | 18,819 | 18,819 | 0.066 |
 
-*Results show FunSearch policy leaves less pods in pending state, leading to fewer repushes*
+*Tested on 8,152 pods across 16 nodes with real Alibaba datacenter traces (each run takes around 0.1s)*
 
 **Key Insights from New Metrics:**
 - **Lower repush events**: FunSearch achieves 30% fewer repushes than best-fit (123 vs 175)
