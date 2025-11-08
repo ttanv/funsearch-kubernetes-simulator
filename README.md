@@ -2,6 +2,8 @@
 
 > *Note: main branch contains the original demoed version, dev branch contains realism improvements and fixes. Uses time-stepped evaluator and focuses on makespan metrics*
 
+**Note:** `main` branch contains the original demoed version, `dev` branch contains realism improvements and fixes. Uses time-stepped evaluator and focuses on makespan metrics.
+
 ## Overview
 
 This project demonstrates automated discovery of Kubernetes scheduling policies using Google's FunSearch algorithm. By combining discrete-event simulation with LLM-powered code evolution, we systematically discover scheduling strategies that outperform traditional approaches on real datacenter workloads.
@@ -51,19 +53,51 @@ score -= gpu_fragmentation_factor * 0.2
 - **Fragmentation Prevention**: Reduces GPU memory waste
 - **Adaptive Node Selection**: Context-aware bonuses for high-capacity nodes
 
+## New Evaluation Metrics (Dev Branch)
+
+The dev branch introduces a **repush-focused evaluator** that tracks scheduling efficiency and wait times instead of just resource utilization. This provides more realistic datacenter scheduling metrics:
+
+### Evaluator Comparison
+
+| Metric | Original Evaluator | Repush Evaluator (Dev) |
+|--------|-------------------|------------------------|
+| **Focus** | Resource utilization over time | Scheduling efficiency & makespan |
+| **Primary Metrics** | CPU/Memory/GPU utilization % | Scheduling attempts, repushes, peak nodes |
+| **Fragmentation** | Time-weighted fragmentation | Event-based fragmentation tracking |
+| **Scoring** | Utilization - fragmentation penalty | Success rate + efficiency - wait penalty |
+| **Use Case** | Resource optimization | Realistic scheduler performance |
+
+### Dev Branch Results
+
+| Algorithm | Policy Score | Scheduling Attempts | Repushes | GPU Fragmentation |
+|-----------|--------------|-------------------|----------|-------------------|
+| **🤖 FunSearch Best** | **0.7861** | **123** | **123** | **0.064** |
+| 🧠 Best-Fit (classical) | 0.7855 | 175 | 175 | 0.038 |
+| 📊 First-Fit (baseline) | 0.2934 | 18,819 | 18,819 | 0.066 |
+
+*Results show FunSearch policy leaves less pods in pending state, leading to fewer repushes*
+
+**Key Insights from New Metrics:**
+- **Lower repush events**: FunSearch achieves 30% fewer repushes than best-fit (123 vs 175)
+- **Reduced scheduling attempts**: Indicates better initial placement decisions
+- **Fragmentation trade-offs**: FunSearch balances efficiency with slightly higher GPU fragmentation than best-fit
+
+
+
 ## Quick Start
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Evaluate existing policies
+# Evaluate existing policies (original evaluator)
 python tests/test_scheduler.py
+
+# Evaluate with new repush-focused metrics (dev branch)
+python tests/test_repush_scheduler.py
 
 # View the code for the top 3 discovered policies
 # See tests/test_scheduler.py for implementation details
-
-
 
 # Configure API key in configs/llm_config.json
 # Replace "API_KEY" with your OpenRouter API key
@@ -101,6 +135,7 @@ python funsearch/funsearch_integration.py
 │ │ • Pod creation  │    │                 │    │                 │           │
 │ │ • Pod deletion  │    │ • Policy exec   │    │ • CPU/Mem/GPU   │           │
 │ │ • Time ordering │    │ • Resource check│    │ • Fragmentation │           │
+│ │                 │    │                 │    │ • # of Repushes │           │
 │ └─────────────────┘    └─────────────────┘    └─────────────────┘           │
 │          ▲                       │                       ▲                  │
 │          │              ┌─────────────────┐              │                  │

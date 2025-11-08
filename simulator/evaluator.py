@@ -25,11 +25,11 @@ class EvaluationResults:
     num_fragmentation_events: int
 
 class SchedulingEvaluator:
-    """Evaluates scheduling policy performance with utilization snapshots and fragmentation tracking"""
+    """Evaluates scheduling policy performance with time-based utilization snapshots and fragmentation tracking"""
     
-    def __init__(self, cluster: Cluster, enabled: bool = True, snapshot_interval: float = 0.05):
+    def __init__(self, cluster: Cluster, enabled: bool = True, snapshot_interval: float = 0.01):
         self.enabled = enabled
-        self.snapshot_interval = snapshot_interval  # Take snapshot every 5% of events by default
+        self.snapshot_interval = snapshot_interval  # Take snapshot every 1% of simulation time by default
         
         # Pre-calculate cluster totals (constant for the experiment)
         self.total_cpu = sum(node.cpu_milli_total for node in cluster.nodes_dict.values())
@@ -37,34 +37,51 @@ class SchedulingEvaluator:
         self.total_gpu_count = sum(len(node.gpus) for node in cluster.nodes_dict.values())
         self.total_gpu_memory = sum(gpu.gpu_milli_total for node in cluster.nodes_dict.values() for gpu in node.gpus)
         
-        # Tracking data
+        # Time-based tracking data
         self.utilization_snapshots: list[UtilizationSnapshot] = []
         self.fragmentation_events: list[float] = []  # GPU fragmentation scores
-        self.total_events: int = 0
-        self.events_processed: int = 0
-        self.next_snapshot_threshold: float = snapshot_interval
+        self.total_simulation_time: int = 0
+        self.current_time: int = 0
+        self.time_since_last_snapshot: float = 0.0
+        self.next_snapshot_time: float = 0.0
+        self.time_weighted_utilization: dict = {'cpu': 0.0, 'memory': 0.0, 'gpu_count': 0.0, 'gpu_memory': 0.0}
+        self.accumulated_time: float = 0.0
         
-    def initialize(self, total_events: int):
-        """Initialize evaluator with total number of events for progress tracking"""
+    def initialize(self, total_simulation_time: int):
+        """Initialize evaluator with total simulation time for time-based snapshots"""
         if not self.enabled:
             return
-        self.total_events = total_events
-        self.events_processed = 0
-        self.next_snapshot_threshold = self.snapshot_interval
+        self.total_simulation_time = total_simulation_time
+        self.current_time = 0
+        self.time_since_last_snapshot = 0.0
+        self.next_snapshot_time = total_simulation_time * self.snapshot_interval
+        self.time_weighted_utilization = {'cpu': 0.0, 'memory': 0.0, 'gpu_count': 0.0, 'gpu_memory': 0.0}
+        self.accumulated_time = 0.0
         
-    def record_event_processed(self, cluster: Cluster):
-        """Record that an event was processed and take snapshot if needed"""
+    def record_event_processed(self, cluster: Cluster, event_time: int):
+        """Record event processing with time-based utilization tracking"""
         if not self.enabled:
             return
             
-        self.events_processed += 1
-        progress = self.events_processed / self.total_events if self.total_events > 0 else 0
+        # Calculate time elapsed since last event
+        time_delta = event_time - self.current_time
         
-        # Take snapshot if we've crossed the threshold
-        if progress >= self.next_snapshot_threshold:
-            snapshot = self._take_utilization_snapshot(cluster, progress)
-            self.utilization_snapshots.append(snapshot)
-            self.next_snapshot_threshold += self.snapshot_interval
+        # Add weighted utilization for the time period that just passed
+        if time_delta > 0:
+            current_util = self._get_current_utilization(cluster)
+            self.time_weighted_utilization['cpu'] += current_util['cpu'] * time_delta
+            self.time_weighted_utilization['memory'] += current_util['memory'] * time_delta
+            self.time_weighted_utilization['gpu_count'] += current_util['gpu_count'] * time_delta
+            self.time_weighted_utilization['gpu_memory'] += current_util['gpu_memory'] * time_delta
+            self.accumulated_time += time_delta
+        
+        self.time_since_last_snapshot += time_delta
+        self.current_time = event_time
+        
+        # Check if we need to take snapshot(s)
+        while self.time_since_last_snapshot >= self.next_snapshot_time:
+            self._finalize_snapshot()
+            self.time_since_last_snapshot -= self.next_snapshot_time
             
     def record_fragmentation_event(self, cluster: Cluster, waiting_pods: list[Pod]):
         """Record GPU fragmentation when pods are repushed due to insufficient resources"""
@@ -104,11 +121,6 @@ class SchedulingEvaluator:
         if not results:
             return 0.0
         
-        # For assurance, ensure all pods have an assigned pod
-        for pod in pods:
-            if pod.assigned_node == "":
-                return 0
-        
         # Combine all utilization metrics with equal weight
         overall_utilization = (
             results.avg_cpu_utilization + 
@@ -126,20 +138,39 @@ class SchedulingEvaluator:
         
         return score
     
-    def _take_utilization_snapshot(self, cluster: Cluster, progress: float) -> UtilizationSnapshot:
-        """Take a snapshot of current cluster utilization"""
+    def _get_current_utilization(self, cluster: Cluster) -> dict:
+        """Get current instantaneous utilization"""
         used_cpu = sum(node.cpu_milli_total - node.cpu_milli_left for node in cluster.nodes_dict.values())
         used_memory = sum(node.memory_mib_total - node.memory_mib_left for node in cluster.nodes_dict.values())
         used_gpu_count = sum(len(node.gpus) - node.gpu_left for node in cluster.nodes_dict.values())
         used_gpu_memory = sum(gpu.gpu_milli_total - gpu.gpu_milli_left for node in cluster.nodes_dict.values() for gpu in node.gpus)
         
-        return UtilizationSnapshot(
-            cpu_utilization=used_cpu / self.total_cpu if self.total_cpu > 0 else 0.0,
-            memory_utilization=used_memory / self.total_memory if self.total_memory > 0 else 0.0,
-            gpu_count_utilization=used_gpu_count / self.total_gpu_count if self.total_gpu_count > 0 else 0.0,
-            gpu_memory_utilization=used_gpu_memory / self.total_gpu_memory if self.total_gpu_memory > 0 else 0.0,
-            event_progress=progress
+        return {
+            'cpu': used_cpu / self.total_cpu if self.total_cpu > 0 else 0.0,
+            'memory': used_memory / self.total_memory if self.total_memory > 0 else 0.0,
+            'gpu_count': used_gpu_count / self.total_gpu_count if self.total_gpu_count > 0 else 0.0,
+            'gpu_memory': used_gpu_memory / self.total_gpu_memory if self.total_gpu_memory > 0 else 0.0
+        }
+    
+    def _finalize_snapshot(self):
+        """Create a snapshot from accumulated time-weighted utilization"""
+        if self.accumulated_time <= 0:
+            return
+            
+        # Calculate time-weighted average utilization for this snapshot period
+        snapshot = UtilizationSnapshot(
+            cpu_utilization=self.time_weighted_utilization['cpu'] / self.accumulated_time,
+            memory_utilization=self.time_weighted_utilization['memory'] / self.accumulated_time,
+            gpu_count_utilization=self.time_weighted_utilization['gpu_count'] / self.accumulated_time,
+            gpu_memory_utilization=self.time_weighted_utilization['gpu_memory'] / self.accumulated_time,
+            event_progress=len(self.utilization_snapshots) * self.snapshot_interval  # Time progress
         )
+        
+        self.utilization_snapshots.append(snapshot)
+        
+        # Reset accumulators for next snapshot period
+        self.time_weighted_utilization = {'cpu': 0.0, 'memory': 0.0, 'gpu_count': 0.0, 'gpu_memory': 0.0}
+        self.accumulated_time = 0.0
     
     def _calculate_gpu_fragmentation(self, cluster: Cluster, waiting_pods: list[Pod]) -> float:
         """Calculate GPU fragmentation score based on unusable GPU memory"""
