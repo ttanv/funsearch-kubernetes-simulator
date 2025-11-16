@@ -125,4 +125,18 @@ python funsearch/funsearch_integration.py
 
 ---
 
+## Citation
+
+If you use this repository in academic work, please cite:
+
+```bibtex
+@misc{tanveer_funsearch_k8s_2025,
+  author       = {Temoor Tanveer},
+  title        = {FunSearch-Driven Kubernetes Scheduler Optimization},
+  year         = {2025},
+  howpublished = {\url{https://github.com/ttanv/funsearch-kubernetes-simulator}},
+  note         = {GitHub repository}
+}
+```
+
 *This project showcases the practical application of program search for infrastructure optimization - using AI to discover algorithms that human engineers might not intuitively design.*
