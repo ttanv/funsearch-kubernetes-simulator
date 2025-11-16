@@ -1,4 +1,4 @@
-# FunSearch-Driven Kubernetes Scheduler Optimization
+# FunSearch Kubernetes Scheduler Simulator
 
 
 ## Overview
